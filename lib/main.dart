@@ -15,15 +15,19 @@ import 'package:provider/provider.dart';
 import 'providers.dart';
 
 Future<void> main() async {
+
+  const String deviceName = "TinyGo Sensor";
+  const String deviceMAC = "80:32:53:74:15:A7";
+
   WidgetsFlutterBinding.ensureInitialized();
 
-  final bleData = BLEData();
+  final charProvider = CharProvider();
 
-  BluetoothManager BLEManager = BluetoothManager("TinyGo Sensor", bleData);
+  BluetoothManager BLEManager = BluetoothManager(deviceMAC, deviceName, charProvider);
 
   runApp(MultiProvider(providers: [
     Provider(create: (context) => UserData()),
-    ChangeNotifierProvider(create: (context) => bleData)
+    ChangeNotifierProvider(create: (context) => charProvider)
   ], child: const MyApp()));
 }
 
@@ -82,7 +86,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<BLEData>(builder: (context, bleData, child) {
+    return Consumer<CharProvider>(builder: (context, bleData, child) {
       return DefaultTabController(
           length: 2,
           child: Scaffold(
@@ -110,8 +114,6 @@ class _MyHomePageState extends State<MyHomePage> {
                                     FlSpot(1, 1),
                                     FlSpot(2, 3),
                                     FlSpot(3, 2),
-                                    FlSpot(4, 4),
-                                    FlSpot(5, 2),
                                   ],
                                   isCurved: true,
                                   preventCurveOverShooting: true,
@@ -124,16 +126,18 @@ class _MyHomePageState extends State<MyHomePage> {
                                   dashArray: [3, 4],
                                 ),
                               ],
+                              maxX: 0,
+                              minX: 4,
                             ),
                           )),
                     ])),
-                bleData.discoveredCharacteristics.isEmpty
+                bleData.characteristicsWithMetadata.isEmpty
                     ? const Center(child: Text("Getting services..."))
                     : const CharacteristicList(),
               ])));
     });
 
-    Consumer<BLEData>(
+    Consumer<CharProvider>(
       builder: (context, bleData, child) {
         // floatingActionButton: Column(
         //   mainAxisAlignment: MainAxisAlignment.end,

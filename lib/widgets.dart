@@ -35,7 +35,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
   }
 
   Widget characteristicSelection(
-      BLEData bleData, Map<String, dynamic> charWithMeta) {
+      CharProvider charProvider, Map<String, dynamic> charWithMeta) {
     int previousNewValue = charWithMeta['new_value'];
 
     BluetoothCharacteristic char =
@@ -77,7 +77,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
           onSelected: (selection) {
             if (selection != null) {
               try {
-                bleData.editLocalCharValue(uuid, int.parse(selection));
+                charProvider.editLocalCharValue(uuid, int.parse(selection));
               } on FormatException catch (e) {
                 printError("String to int parsing error in selection: $e");
               }
@@ -96,7 +96,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
             value: previousNewValue == 0 ? false : true,
             onChanged: (state) {
               if (state != null) {
-                bleData.editLocalCharValue(uuid, state ? 1 : 0);
+                charProvider.editLocalCharValue(uuid, state ? 1 : 0);
               }
             });
 
@@ -147,7 +147,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
             newValue = rangeOptionsInt.last;
           }
 
-          bleData.editLocalCharValue(uuid, newValue);
+          charProvider.editLocalCharValue(uuid, newValue);
           printWarning("text input parsed to char value...");
         }
 
@@ -171,7 +171,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
     }
   }
 
-  Widget charList(context, BLEData bleData,
+  Widget charList(context, CharProvider bleData,
       Map<String, Map<String, dynamic>> charsWithMeta, Color color) {
     return charsWithMeta.isEmpty
         ? const Text("no such characteristics...")
@@ -183,9 +183,16 @@ class _CharacteristicListState extends State<CharacteristicList> {
             child: ListView.builder(
                 itemCount: charsWithMeta.length,
                 itemBuilder: (context, index) {
-                  final uuid = charsWithMeta.keys.elementAt(index);
+                  final String uuid = charsWithMeta.keys.elementAt(index);
+
+                  //printError("uuid: $uuid");
+                  //printError(charsWithMeta[uuid].toString());
+
+                  //printError(charsWithMeta[uuid]!['metadata'].toString());
+
                   final charMetadata =
                       charsWithMeta[uuid]!['metadata'] as Map<String, dynamic>;
+
 
                   return Container(
                       margin: const EdgeInsets.symmetric(
@@ -228,7 +235,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<BLEData>(builder: (context, bleData, child) {
+    return Consumer<CharProvider>(builder: (context, bleData, child) {
       return Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [

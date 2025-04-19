@@ -1,0 +1,1 @@
+/home/feliks/Projects/TEMP/mems_bluetooth/build/app/intermediates/cxx/Debug/6u4c3f2g/obj/x86_64

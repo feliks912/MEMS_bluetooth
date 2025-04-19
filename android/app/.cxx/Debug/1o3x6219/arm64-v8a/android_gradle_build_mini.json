@@ -1,0 +1,20 @@
+{
+  "buildFiles": [
+    "/home/feliks/opt/flutter/packages/flutter_tools/gradle/src/main/groovy/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/feliks/Android/Sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/feliks/Projects/TEMP/mems_bluetooth/android/app/.cxx/Debug/1o3x6219/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/feliks/Android/Sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/feliks/Projects/TEMP/mems_bluetooth/android/app/.cxx/Debug/1o3x6219/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {}
+}

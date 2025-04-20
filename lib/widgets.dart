@@ -35,23 +35,28 @@ class _CharacteristicListState extends State<CharacteristicList> {
   }
 
   Widget characteristicSelection(
-      CharProvider charProvider, Map<String, dynamic> charWithMeta) {
+      CharProvider charProvider, String uuid, Map<String, Map<String, dynamic>> charsWithMeta) {
+
+    Map<String, dynamic> charWithMeta = charsWithMeta[uuid]!;
+
     int previousNewValue = charWithMeta['new_value'];
 
-    BluetoothCharacteristic char =
-        charWithMeta['characteristic'] as BluetoothCharacteristic;
-    String uuid = char.uuid.toString();
-
-    if (!char.properties.write) {
-      return Column(
-        children: [Text(bytesToIntLE(char.lastValue).toString())],
-      );
-    }
+    // BluetoothCharacteristic char =
+    //     charWithMeta['characteristic'] as BluetoothCharacteristic;
+    // String uuid = char.uuid.toString();
+    //
+    // if (!char.properties.write) {
+    //   return Column(
+    //     children: [Text(bytesToIntLE(char.lastValue).toString())],
+    //   );
+    // }
 
     if (charWithMeta['metadata']['editing'] == null) {
-      printError(
-          "characteristic is writeable but 'editing' field doesn't exist.");
-      return const Text("oops");
+      printWarning(
+          "WIDGET_CHARACTERISTICS: For now a lack of 'editing' field in meta means it's read only. Todo separate access variable in metadata.");
+      return Column(
+            children: [Text(previousNewValue.toString())],
+          );
     }
 
     String selectionType = charWithMeta['metadata']['editing'];
@@ -59,7 +64,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
     switch (selectionType) {
       case "selection":
         if (charWithMeta['metadata']['selection_options'] == null) {
-          printError("editing is 'selection' but selection_options is null");
+          printError("WIDGET_CHARACTERISTICS: Editing is 'selection' but selection_options is null");
           return const Text("Error: Missing selection options");
         }
 
@@ -79,7 +84,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
               try {
                 charProvider.editLocalCharValue(uuid, int.parse(selection));
               } on FormatException catch (e) {
-                printError("String to int parsing error in selection: $e");
+                printError("WIDGET_CHARACTERISTICS: String to int parsing error in selection: $e");
               }
             }
           },
@@ -88,7 +93,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
 
       case "checkbox":
         if (charWithMeta['metadata']['data_type'] != 'bool') {
-          printError("editing is 'checkbox' but variable isn't bool.");
+          printError("WIDGET_CHARACTERISTICS: Editing is 'checkbox' but variable isn't bool.");
           return const Text("Error: Wrong char var type.");
         }
 
@@ -102,7 +107,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
 
       case "write":
         if (charWithMeta['metadata']['range'] == null) {
-          printError("Editing is 'write' but 'range' isn't defined.");
+          printError("WIDGET_CHARACTERISTICS: Editing is 'write' but 'range' isn't defined.");
           return const Text("Range property missing from 'writing' edit.");
         }
 
@@ -110,7 +115,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
             TextEditingController(text: previousNewValue.toString() ?? '');
 
         void handleSubmit(String text) {
-          printWarning("Entered handleSubmit");
+          printWarning("WIDGET_CHARACTERISTICS: Entered handleSubmit");
 
           List<dynamic> rangeOptions =
               charWithMeta['metadata']['range'] as List<dynamic>;
@@ -125,30 +130,30 @@ class _CharacteristicListState extends State<CharacteristicList> {
           try {
             newValue = int.parse(text);
           } on FormatException catch (e) {
-            printError("Parsing text as digits failed: $e");
+            printError("WIDGET_CHARACTERISTICS: Parsing text as digits failed: $e");
           }
 
           if (newValue == null) {
-            printError("newValue is null.");
+            printError("WIDGET_CHARACTERISTICS: New value is null.");
             return;
           }
 
           if (rangeOptions.length != 2) {
             printError(
-                "Characteristic $uuid range option are not 2 values min and max.");
+                "WIDGET_CHARACTERISTICS: Characteristic $uuid range option are not 2 values min and max.");
             return;
           }
 
           if (newValue <= rangeOptionsInt.first) {
-            printError("Min allowed value is ${rangeOptionsInt.first}");
+            printError("WIDGET_CHARACTERISTICS: Min allowed value is ${rangeOptionsInt.first}");
             newValue = rangeOptionsInt.first;
           } else if (newValue >= rangeOptionsInt.last) {
-            printError("Max allowed value is ${rangeOptionsInt.last}");
+            printError("WIDGET_CHARACTERISTICS: Max allowed value is ${rangeOptionsInt.last}");
             newValue = rangeOptionsInt.last;
           }
 
           charProvider.editLocalCharValue(uuid, newValue);
-          printWarning("text input parsed to char value...");
+          printWarning("WIDGET_CHARACTERISTICS: Text input parsed to char value...");
         }
 
         return TextField(
@@ -166,7 +171,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
         );
 
       default:
-        printError("No editing property...");
+        printError("WIDGET_CHARACTERISTICS: No editing property...");
         return const Text("err");
     }
   }
@@ -225,7 +230,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
                                       mainAxisAlignment: MainAxisAlignment.end,
                                       children: [
                                         characteristicSelection(
-                                            bleData, charsWithMeta[uuid]!)
+                                            bleData, uuid, charsWithMeta)
                                       ])),
                             ),
                           ]));

@@ -19,8 +19,8 @@ class CharProvider extends ChangeNotifier {
 
   final DatabaseManager databaseManager;
 
-  List<BluetoothService> _discoveredServices = [];
-  List<BluetoothCharacteristic> _discoveredCharacteristics = [];
+  // List<BluetoothService> _discoveredServices = [];
+  // List<BluetoothCharacteristic> _discoveredCharacteristics = [];
 
   late Future<void> _metadataLoadFuture;
 
@@ -46,27 +46,27 @@ class CharProvider extends ChangeNotifier {
       return;
     }
 
-    _characteristicsWithMetadata = tempChars;
+    setCharacteristicsWithMetadata = tempChars;
 
-    printWarning("CHAR_PROVIDER: set database characteristics with metadata as local.");
+    printWarning("CHAR_PROVIDER: set ${tempChars.length} database characteristics with metadata as local.");
 
     notifyListeners();
   }
 
-  List<BluetoothService> get discoveredServices => _discoveredServices;
-
-  List<BluetoothCharacteristic> get discoveredCharacteristics =>
-      _discoveredCharacteristics;
-
-  set setDiscoveredServices(List<BluetoothService> services) {
-    _discoveredServices = services;
-    notifyListeners();
-  }
-
-  set setDiscoveredCharacteristics(List<BluetoothCharacteristic> chars) {
-    _discoveredCharacteristics = chars;
-    notifyListeners();
-  }
+  // List<BluetoothService> get discoveredServices => _discoveredServices;
+  //
+  // List<BluetoothCharacteristic> get discoveredCharacteristics =>
+  //     _discoveredCharacteristics;
+  //
+  // set setDiscoveredServices(List<BluetoothService> services) {
+  //   _discoveredServices = services;
+  //   notifyListeners();
+  // }
+  //
+  // set setDiscoveredCharacteristics(List<BluetoothCharacteristic> chars) {
+  //   _discoveredCharacteristics = chars;
+  //   notifyListeners();
+  // }
 
   Map<String, dynamic>? _characteristicMetadata;
   Map<String, Map<String, dynamic>> _characteristicsWithMetadata = {};
@@ -99,48 +99,35 @@ class CharProvider extends ChangeNotifier {
       printError("CHAR_PROVIDER: provided mds are empty and now they should be restored. What now?");
     }
 
-    // Save values we wanted written into old characteristics
-    Map<String, int> tempNewValues =
-        _characteristicsWithMetadata.map((key, value) {
-      return MapEntry(key, value['new_value'] as int);
-    });
+    //FIXME: This part needs to be adjusted - on restore there is no md['characteristics']
+    for (String uuid in mds.keys) {
 
-    for (Map<String, dynamic> md in mds.values) {
-      BluetoothCharacteristic char =
-          md['characteristic'] as BluetoothCharacteristic;
-      String uuid = char.uuid.toString();
-
-      if (!tempNewValues.containsKey(uuid)) {
+      if ( ! _characteristicsWithMetadata.containsKey(uuid)) {
         // New characteristic discovered, add it
 
         printWarning("CHAR_PROVIDER: Char $uuid is new");
 
-        _synchronizedCharacteristicsWithMetadata[uuid] = md;
+        _synchronizedCharacteristicsWithMetadata[uuid] = mds[uuid]!;
       } else {
         //Characteristic with the same uuid already exists.
         // Where will we put the new characteristic?
-        if (md['old_value'] == tempNewValues[uuid]) {
+        if (mds[uuid]!['old_value'] == mds[uuid]!['new_value']) {
           // If the value read is the same as the one we wanted set
 
           printWarning("CHAR_PROVIDER: Char $uuid synchronized.");
 
-          _synchronizedCharacteristicsWithMetadata[uuid] = md;
+          _synchronizedCharacteristicsWithMetadata[uuid] = mds[uuid]!;
           if (_unsynchronizedCharacteristicsWithMetadata.containsKey(uuid)) {
             _unsynchronizedCharacteristicsWithMetadata.remove(uuid);
-          } else {
-            printError("CHAR_PROVIDER: Error.");
           }
         } else {
           // If the value read is not the one we want set
 
           printWarning("CHAR_PROVIDER: Char $uuid not synchronized.");
 
-          md['new_value'] = tempNewValues[uuid];
-          _unsynchronizedCharacteristicsWithMetadata[uuid] = md;
+          _unsynchronizedCharacteristicsWithMetadata[uuid] = mds[uuid]!;
           if (_synchronizedCharacteristicsWithMetadata.containsKey(uuid)) {
             _synchronizedCharacteristicsWithMetadata.remove(uuid);
-          } else {
-            printError("CHAR_PROVIDER: Error #2");
           }
         }
       }
@@ -148,16 +135,20 @@ class CharProvider extends ChangeNotifier {
       // Only write characteristics if they're getting updated, not if they are restored from the database
       // Which happens at startup
       if( ! isRestore) {
-        databaseManager.updateCharacteristicWithMetadata(uuid, md);
+        databaseManager.updateCharacteristicWithMetadata(uuid, mds[uuid]!);
         printWarning("CHAR_PROVIDER: Sent characteristics to the database.");
       }
-      _characteristicsWithMetadata[uuid] = md;
+      _characteristicsWithMetadata[uuid] = Map<String, dynamic>.from(mds[uuid]!);
     }
 
-    isRestore = false;
+    if(isRestore) {
+      isRestore = false;
+      printWarning("CHAR_PROVIDER: Set isRestore bit to false.");
+    }
 
-    printError("""CHAR_PROVIDER: Executing notifyListeners after assigning characteristics...
-    CHAR_PROVIDER: Number of characteristics: ${discoveredCharacteristics.length}.
+
+    printError("""
+    CHAR_PROVIDER: Executing notifyListeners after assigning characteristics...
     CHAR_PROVIDER: Number of characteristics with metadata: ${characteristicsWithMetadata.length}.
     CHAR_PROVIDER: Number of synchronized: ${synchronizedCharacteristicsWithMetadata.length}.
     CHAR_PROVIDER: Number of unsynchronized: ${unsynchronizedCharacteristicsWithMetadata.length}""");
@@ -172,7 +163,10 @@ class CharProvider extends ChangeNotifier {
       return;
     }
 
-    _characteristicsWithMetadata[uuid]!['new_value'] = newValue;
+    //FIXME: A temporary solution for somewhere else assigning an immutable map to the _characteristicsWithMetadata
+    Map<String, dynamic> tempChar = Map<String, dynamic>.from(_characteristicsWithMetadata[uuid]!);
+    tempChar['new_value'] = newValue;
+    _characteristicsWithMetadata[uuid] = tempChar;
     databaseManager.updateCharacteristicWithMetadata(uuid, _characteristicsWithMetadata[uuid]!);
 
     if (_characteristicsWithMetadata[uuid]!['old_value'] == newValue) {

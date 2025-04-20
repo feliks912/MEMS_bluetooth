@@ -37,13 +37,13 @@ class BluetoothManager {
     void Function(List<int>) onDataReceived,
   ) async {
     if (device == null) {
-      printError("Can't subscribe to a characteristic, device isn't defined");
+      printError("BLUETOOTH_MANAGER: Can't subscribe to a characteristic, device isn't defined");
       return null;
     }
 
     if (device!.isDisconnected) {
       printError(
-          "Characteristic ${characteristic.uuid} subscription error: device is disconnected");
+          "BLUETOOTH_MANAGER: Characteristic ${characteristic.uuid} subscription error: device is disconnected");
     }
 
     final subscription = characteristic.onValueReceived.listen(onDataReceived);
@@ -52,17 +52,17 @@ class BluetoothManager {
 
     await characteristic.setNotifyValue(true);
 
-    printWarning("Subscribed to characteristic ${characteristic.uuid}");
+    printWarning("BLUETOOTH_MANAGER: Subscribed to characteristic ${characteristic.uuid}");
 
     return Future.value(subscription);
   }
 
-  Future<List<BluetoothService>> getServices() async {
-    if (charProvider.discoveredServices.isNotEmpty) {
-      return charProvider.discoveredServices;
-    }
-    return _servicesCompleter.future;
-  }
+  // Future<List<BluetoothService>> getServices() async {
+  //   if (charProvider.discoveredServices.isNotEmpty) {
+  //     return charProvider.discoveredServices;
+  //   }
+  //   return _servicesCompleter.future;
+  // }
 
   void _startScan(String? deviceMAC, String? deviceName) {
     if (deviceMAC != null) {
@@ -83,14 +83,14 @@ class BluetoothManager {
       );
     } else {
       printError(
-          "Device name and Device MAC not provided, what do I scan for?");
+          "BLUETOOTH_MANAGER: Device name and Device MAC not provided, what do I scan for?");
     }
   }
 
   void _initializeBluetooth() {
     _BLEStateStream =
         FlutterBluePlus.adapterState.listen((BluetoothAdapterState state) {
-      printWarning("Current bluetooth state: ${state.toString()}");
+      printWarning("BLUETOOTH_MANAGER: Current bluetooth state: ${state.toString()}");
 
       if (state == BluetoothAdapterState.off) {
         //Request BLE turn on from the user (Android only?)s
@@ -105,7 +105,7 @@ class BluetoothManager {
         try {
           _startScan(deviceMAC, deviceName);
         } catch (e) {
-          printError("Cant start scanning: $e");
+          printError("BLUETOOTH_MANAGER: Cant start scanning: $e");
         }
       }
 
@@ -123,8 +123,8 @@ class BluetoothManager {
 
           device = null;
 
-          charProvider.setDiscoveredCharacteristics = [];
-          charProvider.setDiscoveredServices = [];
+          // charProvider.setDiscoveredCharacteristics = [];
+          // charProvider.setDiscoveredServices = [];
 
           _servicesCompleter = Completer<List<BluetoothService>>();
         }
@@ -138,10 +138,10 @@ class BluetoothManager {
   }
 
   void _handleScanResults(List<ScanResult> results) async {
-    printWarning("Scan callback");
+    printWarning("BLUETOOTH_MANAGER: Scan callback");
 
     if (results.isEmpty) {
-      printWarning("Results are empty.");
+      printWarning("BLUETOOTH_MANAGER: Results are empty.");
       return;
     }
 
@@ -157,12 +157,12 @@ class BluetoothManager {
           .any((device) => device.remoteId == result.device.remoteId);
 
       printWarning("""
-      matchesMAC: $matchesMAC,
-      matchesName: $matchesName,
-      isNotConnected: $isNotConnected""");
+      BLUETOOTH_MANAGER: matchesMAC: $matchesMAC,
+      BLUETOOTH_MANAGER: matchesName: $matchesName,
+      BLUETOOTH_MANAGER: isNotConnected: $isNotConnected""");
 
       if ((matchesMAC || matchesName) && isNotConnected) {
-        printWarning("Entered if");
+        printWarning("BLUETOOTH_MANAGER: Entered if");
         device = result.device;
 
         // if (FlutterBluePlus.isScanningNow) {
@@ -192,17 +192,17 @@ class BluetoothManager {
                     try {
                       await FlutterBluePlus.stopScan();
                     } catch (e) {
-                      printError("Can't stop scanning nooooo");
+                      printError("BLUETOOTH_MANAGER: Can't stop scanning nooooo");
                     }
                   }
                   _isConnecting = false;
                 } else {
                   printError(
-                      "Connect returned true but device isn't connected?");
+                      "BLUETOOTH_MANAGER: Connect returned true but device isn't connected?");
                 }
               } catch (e) {
                 _isConnecting = false;
-                printError("connecting attempt failed!");
+                printError("BLUETOOTH_MANAGER: Connecting attempt failed!");
                 connect();
               }
             }
@@ -215,7 +215,7 @@ class BluetoothManager {
       }
     }
 
-    printWarning("Scan callback out");
+    printWarning("BLUETOOTH_MANAGER: Scan callback out");
   }
 
   void _handleDeviceConnectionStateChange(
@@ -224,52 +224,56 @@ class BluetoothManager {
     if (state == BluetoothConnectionState.connected) {
       _isConnecting = false;
 
-      printWarning("Device is connected yayyyy");
+      printWarning("BLUETOOTH_MANAGER: Device is connected yayyyy");
 
       //If freshly connected, discover services right away
       List<BluetoothService> services = await device.discoverServices();
 
       if (services.isEmpty) {
         //TODO: Handle empty services
-        printError("No services discovered on connected device.");
+        printError("BLUETOOTH_MANAGER: No services discovered on connected device.");
         return;
       }
 
-      charProvider.setDiscoveredServices = services;
-      if (!_servicesCompleter.isCompleted) {
-        _servicesCompleter.complete(services);
-      }
+      // charProvider.setDiscoveredServices = services;
+
 
       List<BluetoothCharacteristic> tempCharList = [];
 
-      for (BluetoothService service in charProvider.discoveredServices) {
+      for (BluetoothService service in services) {
         if (service.characteristics.isNotEmpty) {
           for (BluetoothCharacteristic char in service.characteristics) {
             tempCharList.add(char);
           }
         } else {
           printError(
-              "Service ${service.uuid} doesn't contain any characteristics.");
+              "BLUETOOTH_MANAGER: Service ${service.uuid} doesn't contain any characteristics.");
         }
       }
 
+
+
       if (charProvider.unsynchronizedCharacteristicsWithMetadata.isNotEmpty) {
         for (BluetoothCharacteristic char in tempCharList) {
-          if (charProvider.unsynchronizedCharacteristicsWithMetadata
-              .containsKey(char.uuid.toString())) {
-            int newValue = charProvider.unsynchronizedCharacteristicsWithMetadata[
-                char.uuid.toString()]!['new_value'] as int;
 
-            printWarning("Writing $newValue to char ${char.uuid.toString()}");
+          String uuid = char.uuid.toString();
+
+          if (charProvider.unsynchronizedCharacteristicsWithMetadata
+              .containsKey(uuid)) {
+
+            int newValue = charProvider.unsynchronizedCharacteristicsWithMetadata[
+            uuid]!['new_value'] as int;
+
+            printWarning("BLUETOOTH_MANAGER: Writing $newValue to char $uuid, equal to ${intToBytesLE(newValue)} in hex");
 
             try {
               await char.write(intToBytesLE(newValue));
             } catch (e) {
               printError(
-                  "Can't write to characteristic ${char.uuid.toString()}, reason: $e");
+                  "BLUETOOTH_MANAGER: Can't write to characteristic $uuid, reason: $e");
             }
 
-            printWarning("Write success.");
+            printWarning("BLUETOOTH_MANAGER: Write success.");
           }
         }
       }
@@ -286,43 +290,47 @@ class BluetoothManager {
       //TODO: Selectively read characteristics instead of reading them all to match metadata
       //TODO: Also implement local database
       if (tempCharList.isNotEmpty) {
-        charProvider.setDiscoveredCharacteristics = tempCharList;
+        // charProvider.setDiscoveredCharacteristics = tempCharList;
         await _matchCharsWithMetadata(tempCharList);
+      }
+
+      if (!_servicesCompleter.isCompleted) {
+        _servicesCompleter.complete(services);
       }
 
       //Write read confirmation characteristic bit
       try {
         await readConfirmationCharacteristic.write([1]);
       } catch (e) {
-        printError("Can't write to read confirmation characteristic: $e");
+        printError("BLUETOOTH_MANAGER: Can't write to read confirmation characteristic: $e");
       }
 
       //FIXME: Disconnect should be done from the embedded device to lower overhead etc upon receiving the readConfirmation
       // The only reason that doesn't happen here is Go's library lacks support for connection detection and therefore getting the connected device
       try {
-        printWarning("Disconnecting device...");
+        printWarning("BLUETOOTH_MANAGER: Disconnecting device...");
 
         await device.disconnect();
 
-        charProvider.setDiscoveredCharacteristics = [];
-        charProvider.setDiscoveredServices = [];
+        // charProvider.setDiscoveredCharacteristics = [];
+        // charProvider.setDiscoveredServices = [];
 
         _servicesCompleter = Completer<List<BluetoothService>>();
 
         printWarning(
-            "Connected devices at disconnect: ${FlutterBluePlus.connectedDevices}");
+            "BLUETOOTH_MANAGER: Connected devices at disconnect: ${FlutterBluePlus.connectedDevices}");
 
-        printWarning("Device disconnected.");
+        printWarning("BLUETOOTH_MANAGER: Device disconnected.");
 
         _startScan(deviceMAC, deviceName);
 
       } catch (e) {
-        printError("Can't disconnect from device: $e");
+        printError("BLUETOOTH_MANAGER: Can't disconnect from device: $e");
       }
     }
 
     if (state == BluetoothConnectionState.disconnected) {
-      printError("DISCONNECTED");
+      printError("BLUETOOTH_MANAGER: DISCONNECTED");
 
       // //FIXME: It seems we can't restart / reconnect after a disconnect without re-scanning?
       // // probably a FBP bug???
@@ -337,7 +345,7 @@ class BluetoothManager {
 
   Future<void> _checkBluetooth() async {
     if (await FlutterBluePlus.isSupported == false) {
-      printError("Bluetooth not supported on this platform.");
+      printError("BLUETOOTH_MANAGER: Bluetooth not supported on this platform.");
       exit(1);
 
       //TODO: Toast placeholder
@@ -345,7 +353,7 @@ class BluetoothManager {
   }
 
   Future<void> _matchCharsWithMetadata(
-      List<BluetoothCharacteristic> discoveredCharacteristics) async {
+      List<BluetoothCharacteristic> characteristics) async {
     await charProvider.metadataLoadFuture;
 
     if (charProvider.characteristicMetadata != null &&
@@ -356,28 +364,35 @@ class BluetoothManager {
       Map<String, Map<String, dynamic>> tempMap = {};
 
       for (String key in characteristicMetadata.keys) {
-        printError("Key is $key");
+        printError("BLUETOOTH_MANAGER: Key is $key");
       }
 
-      for (BluetoothCharacteristic char in discoveredCharacteristics) {
+      for (BluetoothCharacteristic char in characteristics) {
         if (characteristicMetadata.containsKey(char.uuid.toString()) &&
             char.properties.read) {
           try {
+            //TODO: instead of reading, assign to the existing metadata?
             await char.read();
           } catch (e) {
             if (e.runtimeType == FlutterBluePlusException) {
               printError(
-                  "read problem: ${(e as FlutterBluePlusException).description}");
+                  "BLUETOOTH_MANAGER: Read problem: ${(e as FlutterBluePlusException).description}");
             }
           }
 
           int charValue = bytesToIntLE(char.lastValue);
+          int? newCharValue;
+
+          if(charProvider.characteristicsWithMetadata[char.uuid.toString()] != null) {
+            newCharValue = charProvider.characteristicsWithMetadata[char.uuid.toString()]!['new_value'];
+          }
+
 
           tempMap[char.uuid.toString()] = {
             "metadata": characteristicMetadata[char.uuid.toString()],
             "characteristic": char,
             "old_value": charValue,
-            "new_value": charValue
+            "new_value": newCharValue ?? charValue
           };
         }
       }
@@ -400,8 +415,8 @@ class BluetoothManager {
       device = null;
     }
 
-    charProvider.setDiscoveredCharacteristics = [];
-    charProvider.setDiscoveredServices = [];
+    // charProvider.setDiscoveredCharacteristics = [];
+    // charProvider.setDiscoveredServices = [];
 
     Completer<List<BluetoothService>>();
   }

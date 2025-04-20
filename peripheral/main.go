@@ -30,12 +30,19 @@ type logStruct struct {
 
 // Device configuration
 var (
-	fwRevision  string = "v1.0.0"
 	deviceName  string = "TinyGo Sensor"
 	totalMemory uint64 = 0x100000 // 1MB
 
+	fwRevision     string = "0.1.0"
+	fwRevisionUUID        = bluetooth.NewUUID(
+		uuid.MustParse("cabacafe-f00d-4b1b-9b1b-1b1b1b1b1b1b"),
+	)
+
 	batteryPercentageHandle bluetooth.Characteristic
-	batteryPercentage       byte = 100
+	batteryPercentageUUID   = bluetooth.NewUUID(
+		uuid.MustParse("c0dec0fe-0bad-41c7-992f-a5d063dbfeee"),
+	)
+	batteryPercentage byte = 100
 
 	// Device log buffer
 	deviceLogHandle             bluetooth.Characteristic
@@ -56,14 +63,16 @@ var (
 	sensorDataClearBitCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("cabba6ee-c0de-4414-a6f6-46a397e18422"),
 	)
-	sensorDataClearBit byte = 1
+	sensorDataClearBit      byte = 1
+	selfWritingDataClearBit bool = false
 
 	// Whether to auto-disconnect after sending sensor data to central
 	autoDisconnectBitHandle             bluetooth.Characteristic
 	autoDisconnectBitCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("fadebabe-0bad-41c7-992f-a5d063dbfeee"),
 	)
-	autoDisconnectBit byte = 0
+	autoDisconnectBit            byte = 0
+	selfWritingAutoDisconnectBit bool = false
 )
 
 // Sensor configuration
@@ -72,7 +81,8 @@ var (
 	sensorODRCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("4242c0de-f007-4d3c-a1ca-ae3e7e098a2b"),
 	)
-	sensorODR uint16 = 1000 // 1000 for now, later on will be much higher
+	sensorODR      uint16 = 1000 // 1000 for now, later on will be much higher
+	selfWritingODR bool   = false
 
 	// Sensor data buffer
 	sensorDataHandle             bluetooth.Characteristic
@@ -95,35 +105,40 @@ var (
 	transmitPowerCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("b1eec10a-0007-4d3c-a1ca-ae3e7e098a2b"),
 	)
-	transmitPower byte = 0 // 0 dBm
+	transmitPower            byte = 0 // 0 dBm
+	selfWritingTransmitPower bool = false
 
 	// How often to start advertising
 	advIntervalGlobalHandle             bluetooth.Characteristic
 	advIntervalGlobalCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("eeafbeef-cafe-4d3c-a1ca-ae3e7e098a2b"),
 	)
-	advIntervalGlobal uint16 = 5 //in seconds
+	advIntervalGlobal            uint16 = 5 //in seconds
+	selfWritingAdvIntervalGlobal bool   = false
 
 	// How long a single advertising session lasts
 	advDurationHandle             bluetooth.Characteristic
 	advDurationCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("babebeef-cafe-4d3c-a1ca-ae3e7e098a2b"),
 	)
-	advDuration uint16 = 5000 //in ms
+	advDuration            uint16 = 999 //in ms
+	selfWritingAdvDuration bool   = false
 
 	// The interval at which the embedded BLE core will advertise
 	advIntervalLocalHandle             bluetooth.Characteristic
 	advIntervalLocalCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("c0ffee00-babe-4d3c-a1ca-ae3e7e098a2b"),
 	)
-	advIntervalLocal uint16 = 1000 //in multiples of 0.625ms
+	advIntervalLocal            uint16 = 1000 //in multiples of 0.625ms
+	selfWritingAdvIntervalLocal bool   = false
 
 	// How long to wait for a connect response after advertising before turning the core off.
 	responseTimeoutHandle             bluetooth.Characteristic
 	responseTimeoutCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("f007face-babe-47f5-b542-bbfd9b436872"),
 	)
-	responseTimeout byte = 10 // In ms
+	responseTimeout            byte = 10 // In ms
+	selfWritingResponseTimeout bool = false
 )
 
 var (
@@ -135,7 +150,6 @@ var (
 )
 
 var stopAdvertisingDueToDisconnect bool = false
-var selfWritingODRValue bool = false
 
 var GATTStack = []bluetooth.Service{
 	{
@@ -144,7 +158,7 @@ var GATTStack = []bluetooth.Service{
 		Characteristics: []bluetooth.CharacteristicConfig{
 			{
 				Handle: &batteryPercentageHandle,
-				UUID:   bluetooth.CharacteristicUUIDBatteryLevel,
+				UUID:   batteryPercentageUUID,
 				Value:  []byte{batteryPercentage},
 				Flags:  bluetooth.CharacteristicReadPermission,
 			},
@@ -155,14 +169,25 @@ var GATTStack = []bluetooth.Service{
 		Characteristics: []bluetooth.CharacteristicConfig{
 			{
 				Handle: &transmitPowerHandle,
-				UUID:   bluetooth.CharacteristicUUIDTxPowerLevel,
+				UUID:   transmitPowerCharacteristicUUID,
 				Value:  []byte{transmitPower},
 				Flags:  bluetooth.CharacteristicReadPermission | bluetooth.CharacteristicWritePermission,
 				WriteEvent: func(client bluetooth.Connection, offset int, value []byte) {
+					if selfWritingTransmitPower {
+						return
+					}
+
+					selfWritingTransmitPower = true
+					defer func() {
+						selfWritingTransmitPower = false
+					}()
 					if offset != 0 || len(value) != 1 {
+						println("Bad TransmitPower value: ", value)
 						return
 					}
 					transmitPower = value[0]
+					transmitPowerHandle.Write(ToByteArray(transmitPower))
+					println("Transmit power set to:", transmitPower)
 				},
 			},
 		},
@@ -177,7 +202,7 @@ var GATTStack = []bluetooth.Service{
 				Flags: bluetooth.CharacteristicReadPermission,
 			},
 			{
-				UUID:  bluetooth.CharacteristicUUIDFirmwareRevisionString,
+				UUID:  fwRevisionUUID,
 				Value: []byte(fwRevision),
 				Flags: bluetooth.CharacteristicReadPermission,
 			},
@@ -205,10 +230,21 @@ var GATTStack = []bluetooth.Service{
 				Value:  []byte{autoDisconnectBit},
 				Flags:  bluetooth.CharacteristicReadPermission | bluetooth.CharacteristicWritePermission,
 				WriteEvent: func(client bluetooth.Connection, offset int, value []byte) {
+					if selfWritingAutoDisconnectBit {
+						return
+					}
+
+					selfWritingAutoDisconnectBit = true
+					defer func() {
+						selfWritingAutoDisconnectBit = false
+					}()
 					if offset != 0 || len(value) != 1 {
+						println("Bad AutoDisconnectBit value: ", value)
 						return
 					}
 					autoDisconnectBit = value[0]
+					autoDisconnectBitHandle.Write(ToByteArray(autoDisconnectBit))
+					println("Auto disconnect bit set to:", autoDisconnectBit)
 				},
 			},
 			{
@@ -217,10 +253,21 @@ var GATTStack = []bluetooth.Service{
 				Value:  []byte{responseTimeout},
 				Flags:  bluetooth.CharacteristicReadPermission | bluetooth.CharacteristicWritePermission,
 				WriteEvent: func(client bluetooth.Connection, offset int, value []byte) {
+					if selfWritingResponseTimeout {
+						return
+					}
+
+					selfWritingResponseTimeout = true
+					defer func() {
+						selfWritingResponseTimeout = false
+					}()
 					if offset != 0 || len(value) != 1 {
+						println("Bad ResponseTimeout value: ", value)
 						return
 					}
 					responseTimeout = value[0]
+					responseTimeoutHandle.Write(ToByteArray(responseTimeout))
+					println("Response timeout set to:", responseTimeout)
 				},
 			},
 		},
@@ -235,6 +282,7 @@ var GATTStack = []bluetooth.Service{
 				Flags:  bluetooth.CharacteristicWritePermission,
 				WriteEvent: func(client bluetooth.Connection, offset int, value []byte) {
 					if offset != 0 || len(value) != 1 {
+						println("Bad ConfirmRead value: ", value)
 						return
 					}
 					confirmReadValue = value
@@ -256,22 +304,29 @@ var GATTStack = []bluetooth.Service{
 				Value:  ToByteArray(sensorODR),
 				Flags:  bluetooth.CharacteristicReadPermission | bluetooth.CharacteristicWritePermission,
 				WriteEvent: func(client bluetooth.Connection, offset int, value []byte) {
-					if selfWritingODRValue {
+					if selfWritingODR {
 						return
 					}
 
-					selfWritingODRValue = true
+					selfWritingODR = true
 					defer func() {
-						selfWritingODRValue = false
+						selfWritingODR = false
 					}()
 
-					if offset != 0 || len(value) != 2 {
+					if offset != 0 || len(value) > 2 {
+						println("Bad ODR value: ", value)
 						return
+					}
+
+					if len(value) == 1 {
+						newValue := make([]byte, 2)
+						newValue[0] = value[0]
+						newValue[1] = 0x00
+						value = newValue
 					}
 
 					sensorODR = binary.LittleEndian.Uint16(value)
 
-					println("setting value...")
 					sensorODRHandle.Write(ToByteArray(sensorODR))
 					println("Sensor ODR set to:", sensorODR)
 				},
@@ -280,14 +335,7 @@ var GATTStack = []bluetooth.Service{
 				Handle: &sensorDataHandle,
 				UUID:   sensorDataCharacteristicUUID, // UUID: c0debabe-face-4f89-b07d-f9d9b20a76c8
 				Value:  serializedSensorData,
-				Flags:  bluetooth.CharacteristicReadPermission, // Added WritePermission
-				// WriteEvent: func(client bluetooth.Connection, offset int, value []byte) {
-				// 	if offset != 0 || len(value) != 0 { // Corrected WriteEvent for sensorDataHandle
-				// 		return
-				// 	}
-				// 	println("Written 0 to sensor data!")
-				// 	serializedSensorData = nil // Clear on write
-				// },
+				Flags:  bluetooth.CharacteristicReadPermission,
 			},
 			{
 				Handle: &sensorDataClearBitHandle,
@@ -297,10 +345,24 @@ var GATTStack = []bluetooth.Service{
 				// Notify simulates indications.
 				Flags: bluetooth.CharacteristicReadPermission | bluetooth.CharacteristicWritePermission,
 				WriteEvent: func(client bluetooth.Connection, offset int, value []byte) {
-					if offset != 0 || len(value) != 1 {
+					if selfWritingDataClearBit {
 						return
 					}
+
+					selfWritingDataClearBit = true
+					defer func() {
+						selfWritingDataClearBit = false
+					}()
+
+					if offset != 0 || len(value) != 1 {
+						println("Bad DataClearBit value: ", value)
+						return
+					}
+
 					sensorDataClearBit = value[0]
+
+					sensorDataClearBitHandle.Write(ToByteArray(sensorDataClearBit))
+					println("Sensor DataClearBit set to:", sensorDataClearBit)
 				},
 			},
 			{
@@ -309,10 +371,29 @@ var GATTStack = []bluetooth.Service{
 				Value:  ToByteArray(advIntervalGlobal),
 				Flags:  bluetooth.CharacteristicReadPermission | bluetooth.CharacteristicWritePermission,
 				WriteEvent: func(client bluetooth.Connection, offset int, value []byte) {
-					if offset != 0 || len(value) != 2 {
+					if selfWritingAdvIntervalGlobal {
 						return
 					}
+
+					selfWritingAdvIntervalGlobal = true
+					defer func() {
+						selfWritingAdvIntervalGlobal = false
+					}()
+					if offset != 0 || len(value) > 2 {
+						println("Bad AdvIntervalGlobal value: ", value)
+						return
+					}
+
+					if len(value) == 1 {
+						newValue := make([]byte, 2)
+						newValue[0] = value[0]
+						newValue[1] = 0x00
+						value = newValue
+					}
+
 					advIntervalGlobal = binary.LittleEndian.Uint16(value)
+					advIntervalGlobalHandle.Write(ToByteArray(advIntervalGlobal))
+					println("Advertising interval (global) set to:", advIntervalGlobal)
 				},
 			},
 			{
@@ -321,10 +402,29 @@ var GATTStack = []bluetooth.Service{
 				Value:  ToByteArray(advDuration),
 				Flags:  bluetooth.CharacteristicReadPermission | bluetooth.CharacteristicWritePermission,
 				WriteEvent: func(client bluetooth.Connection, offset int, value []byte) {
-					if offset != 0 || len(value) != 2 {
+					if selfWritingAdvDuration {
 						return
 					}
+
+					selfWritingAdvDuration = true
+					defer func() {
+						selfWritingAdvDuration = false
+					}()
+					if offset != 0 || len(value) > 2 {
+						println("Bad AdvDuration value: ", value)
+						return
+					}
+
+					if len(value) == 1 {
+						newValue := make([]byte, 2)
+						newValue[0] = value[0]
+						newValue[1] = 0x00
+						value = newValue
+					}
+
 					advDuration = binary.LittleEndian.Uint16(value)
+					advDurationHandle.Write(ToByteArray(advDuration))
+					println("Advertising duration set to:", advDuration)
 				},
 			},
 			{
@@ -333,10 +433,29 @@ var GATTStack = []bluetooth.Service{
 				Value:  ToByteArray(advIntervalLocal),
 				Flags:  bluetooth.CharacteristicReadPermission | bluetooth.CharacteristicWritePermission,
 				WriteEvent: func(client bluetooth.Connection, offset int, value []byte) {
-					if offset != 0 || len(value) != 2 {
+					if selfWritingAdvIntervalLocal {
 						return
 					}
+
+					selfWritingAdvIntervalLocal = true
+					defer func() {
+						selfWritingAdvIntervalLocal = false
+					}()
+					if offset != 0 || len(value) > 2 {
+						println("Bad AdvIntervalLocal value: ", value)
+						return
+					}
+
+					if len(value) == 1 {
+						newValue := make([]byte, 2)
+						newValue[0] = value[0]
+						newValue[1] = 0x00
+						value = newValue
+					}
+
 					advIntervalLocal = binary.LittleEndian.Uint16(value)
+					advIntervalLocalHandle.Write(ToByteArray(advIntervalLocal))
+					println("Advertising interval (local) set to:", advIntervalLocal)
 				},
 			},
 		},
@@ -540,8 +659,7 @@ func main() {
 	println("Configuring advertisement...")
 	adv := BLEAdapter.DefaultAdvertisement()
 	must("config adv", adv.Configure(bluetooth.AdvertisementOptions{
-		LocalName:    deviceName,
-		ServiceUUIDs: []bluetooth.UUID{bluetooth.ServiceUUIDBattery},
+		LocalName: deviceName,
 	}))
 	println("Advertisement configured.")
 

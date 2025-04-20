@@ -1,12 +1,12 @@
 {
     "characteristic_mappings": {
-        "00002a19-0000-1000-8000-00805f9b34fb": {
+        "c0dec0fe-0bad-41c7-992f-a5d063dbfeee": {
             "name": "Battery Level",
             "description": "Current battery level in percentage (0-100)",
             "data_type": "uint8",
             "unit": "%"
         },
-        "00002a07-0000-1000-8000-00805f9b34fb": {
+        "b1eec10a-0007-4d3c-a1ca-ae3e7e098a2b": {
             "name": "Transmit Power Level",
             "description": "Transmit power level in dBm",
             "data_type": "int8",
@@ -19,7 +19,7 @@
             "description": "Friendly name of the device",
             "data_type": "string"
         },
-        "00002a26-0000-1000-8000-00805f9b34fb": {
+        "cabacafe-f00d-4b1b-9b1b-1b1b1b1b1b1": {
             "name": "Firmware Revision String",
             "description": "Firmware revision string of the device",
             "data_type": "string"

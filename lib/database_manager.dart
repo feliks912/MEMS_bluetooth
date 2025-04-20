@@ -9,18 +9,18 @@ import 'helpers.dart';
 
 class BluetoothTransaction {
   final Map<String, dynamic> metadata;
-  final Map<String, int> characteristics;
+  final Map<String, int> characteristicValues;
   final List<SensorData> sensorData;
 
   const BluetoothTransaction(
       {required this.metadata,
-      required this.characteristics,
+      required this.characteristicValues,
       required this.sensorData});
 
   Map<String, dynamic> toSembastMap() {
     return {
       "metadata": metadata,
-      "characteristics": characteristics,
+      "characteristic_values": characteristicValues,
       "sensor_data": sensorData,
     };
   }
@@ -28,7 +28,7 @@ class BluetoothTransaction {
   factory BluetoothTransaction.fromSembastMap(Map<String, Object?> map) {
     return BluetoothTransaction(
         metadata: map['metadata'] as dynamic,
-        characteristics: map['characteristics'] as Map<String, int>,
+        characteristicValues: map['characteristic_values'] as Map<String, int>,
         sensorData: map['sensor_data'] as List<SensorData>,
     );
   }
@@ -141,6 +141,10 @@ class DatabaseManager {
   }
 
   Future<int> updateCharacteristicWithMetadata(String uuid, Map<String, dynamic> char) async {
+
+    // BluetoothCharacteristic can't be written to the database
+    // TODO: Make sure characteristic is only read over metadata instead of char before being re-discovered on the next connect.
+    char['characteristic'] = null;
 
     if(_database == null) {
       printError("DATABASE: Can't update characteristic with metadata, _database is null.");

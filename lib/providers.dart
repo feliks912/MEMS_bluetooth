@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:sembast/sembast.dart';
 import 'helpers.dart';
+import 'types.dart';
 
 import 'database_manager.dart';
 
@@ -181,6 +182,10 @@ class CharProvider extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  void addTransactionToDatabase(BluetoothTransaction transaction) async {
+    await databaseManager.storeTransaction(transaction);
   }
 
   Future<void> _loadCharacteristicMetadata() async {

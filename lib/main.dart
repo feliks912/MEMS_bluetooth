@@ -11,7 +11,7 @@ import "helpers.dart";
 import "bluetooth_manager.dart";
 import 'package:collection/collection.dart';
 import 'dart:typed_data';
-import 'widgets.dart';
+import "widgets/characteristic_list.dart";
 import 'package:provider/provider.dart';
 import 'providers.dart';
 

@@ -21,6 +21,7 @@ Communication app for ultra low power MEMS Bluetooth module.
 * [done] char display style
 * [done] confirm reads from central to the peripheral
 * Handling connection interruptions
+* Reading large sensor data
 
 #REDO:
 * We fetch characteristics and read their values. The metadata map holds their old and new values. Old values are current values, and new values are to-be-set, but still unset values. When we read a characteristic, the value of the characteristic must go to the old value. The new value is the one set in the interface unless the characteristic is read for the first time (no such existing char yet). The chars are then ordered by whether the new value == old value or not.

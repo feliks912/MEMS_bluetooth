@@ -6,69 +6,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sembast/sembast_io.dart';
 
 import 'helpers.dart';
+import 'types.dart';
 
-class BluetoothTransaction {
-  final Map<String, dynamic> metadata;
-  final Map<String, int> characteristicValues;
-  final List<SensorData> sensorData;
 
-  const BluetoothTransaction(
-      {required this.metadata,
-      required this.characteristicValues,
-      required this.sensorData});
-
-  Map<String, dynamic> toSembastMap() {
-    return {
-      "metadata": metadata,
-      "characteristic_values": characteristicValues,
-      "sensor_data": sensorData,
-    };
-  }
-
-  factory BluetoothTransaction.fromSembastMap(Map<String, Object?> map) {
-    return BluetoothTransaction(
-        metadata: map['metadata'] as dynamic,
-        characteristicValues: map['characteristic_values'] as Map<String, int>,
-        sensorData: map['sensor_data'] as List<SensorData>,
-    );
-  }
-}
-
-class SensorData {
-  final int startTime;
-  final int lengthTime;
-  final int ODR;
-  final int lengthData;
-  final List<int> rawData;
-
-  //TODO: Use fixnum to create static unsigned integers. For now signed will do.
-  const SensorData(
-      {required this.startTime,
-      required this.lengthTime,
-      required this.ODR,
-      required this.lengthData,
-      required this.rawData});
-  
-  Map<String, dynamic> toSembastMap() {
-    return {
-      "start_time": startTime,
-      "length_time": lengthTime,
-      "ODR": ODR,
-      "length_data": lengthData,
-      "raw_data": rawData,
-    };
-  }
-
-  factory SensorData.fromSembastMap(Map<String, Object?> map) {
-    return SensorData(
-      startTime: map['start_time'] as int,
-      lengthTime: map['lengthTime'] as int,
-      ODR: map['odr'] as int,
-      lengthData: map['length_data'] as int,
-      rawData: map['raw_data'] as List<int>,
-    );
-  }
-}
 
 class DatabaseManager {
   static DatabaseManager? _instance;

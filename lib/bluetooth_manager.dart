@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:mems_bluetooth/types.dart';
 import 'dart:async';
 import 'dart:io';
 import "helpers.dart";
@@ -9,6 +10,11 @@ import 'providers.dart';
 
 class BluetoothManager {
   //TODO: Handle stream error values and timeouts with grace.
+
+  static String sensorDataUUID = "c0debabe-face-4f89-b07d-f9d9b20a76c8";
+  static String readConfirmationBitUUID = "aaaaaaaa-face-4f89-b07d-f9d9b20a76c8";
+
+  late BluetoothCharacteristic rawSensorDataChar;
 
   late StreamSubscription _BLEStateStream;
   late StreamSubscription _BLEScanStream;
@@ -251,7 +257,7 @@ class BluetoothManager {
         }
       }
 
-
+      Map<String, Map<String, dynamic>> tempUnsynchronizedCharacteristics = Map<String, Map<String, dynamic>>.of(charProvider.unsynchronizedCharacteristicsWithMetadata);
 
       if (charProvider.unsynchronizedCharacteristicsWithMetadata.isNotEmpty) {
         for (BluetoothCharacteristic char in tempCharList) {
@@ -276,22 +282,23 @@ class BluetoothManager {
             printWarning("BLUETOOTH_MANAGER: Write success.");
           }
         }
-      }
-
-      String readConfirmationCharacteristicUUID =
-          "aaaaaaaa-face-4f89-b07d-f9d9b20a76c8";
+      };
 
       BluetoothCharacteristic readConfirmationCharacteristic =
           tempCharList.firstWhere((char) =>
-              char.uuid.toString() == readConfirmationCharacteristicUUID);
+              char.uuid.toString() == readConfirmationBitUUID);
+
+      rawSensorDataChar = tempCharList.firstWhere((char) =>
+            char.uuid.toString() == sensorDataUUID);
 
       tempCharList.remove(readConfirmationCharacteristic);
+      tempCharList.remove(rawSensorDataChar);
 
       //TODO: Selectively read characteristics instead of reading them all to match metadata
       //TODO: Also implement local database
       if (tempCharList.isNotEmpty) {
         // charProvider.setDiscoveredCharacteristics = tempCharList;
-        await _matchCharsWithMetadata(tempCharList);
+        await _matchCharsWithMetadata(tempCharList, tempUnsynchronizedCharacteristics);
       }
 
       if (!_servicesCompleter.isCompleted) {
@@ -353,52 +360,65 @@ class BluetoothManager {
   }
 
   Future<void> _matchCharsWithMetadata(
-      List<BluetoothCharacteristic> characteristics) async {
+      List<BluetoothCharacteristic> characteristics, Map<String, Map<String, dynamic>> tempUnsynchronizedCharacteristics) async {
     await charProvider.metadataLoadFuture;
 
-    if (charProvider.characteristicMetadata != null &&
-        charProvider.characteristicMetadata!.isNotEmpty) {
-      Map<String, dynamic> characteristicMetadata =
-          charProvider.characteristicMetadata!;
-
-      Map<String, Map<String, dynamic>> tempMap = {};
-
-      for (String key in characteristicMetadata.keys) {
-        printError("BLUETOOTH_MANAGER: Key is $key");
-      }
-
-      for (BluetoothCharacteristic char in characteristics) {
-        if (characteristicMetadata.containsKey(char.uuid.toString()) &&
-            char.properties.read) {
-          try {
-            //TODO: instead of reading, assign to the existing metadata?
-            await char.read();
-          } catch (e) {
-            if (e.runtimeType == FlutterBluePlusException) {
-              printError(
-                  "BLUETOOTH_MANAGER: Read problem: ${(e as FlutterBluePlusException).description}");
-            }
-          }
-
-          int charValue = bytesToIntLE(char.lastValue);
-          int? newCharValue;
-
-          if(charProvider.characteristicsWithMetadata[char.uuid.toString()] != null) {
-            newCharValue = charProvider.characteristicsWithMetadata[char.uuid.toString()]!['new_value'];
-          }
-
-
-          tempMap[char.uuid.toString()] = {
-            "metadata": characteristicMetadata[char.uuid.toString()],
-            "characteristic": char,
-            "old_value": charValue,
-            "new_value": newCharValue ?? charValue
-          };
-        }
-      }
-
-      charProvider.setCharacteristicsWithMetadata = tempMap;
+    if (charProvider.characteristicMetadata == null ||
+        charProvider.characteristicMetadata!.isEmpty) {
+      return;
     }
+
+    Map<String, dynamic> characteristicMetadata =
+        charProvider.characteristicMetadata!;
+
+    Map<String, Map<String, dynamic>> tempMap = {};
+
+    for (String key in characteristicMetadata.keys) {
+      printError("BLUETOOTH_MANAGER: Key is $key");
+    }
+
+    for (BluetoothCharacteristic char in characteristics) {
+      if (characteristicMetadata.containsKey(char.uuid.toString()) &&
+          char.properties.read) {
+        try {
+          //TODO: instead of reading, assign to the existing metadata?
+          await char.read();
+        } catch (e) {
+          if (e.runtimeType == FlutterBluePlusException) {
+            printError(
+                "BLUETOOTH_MANAGER: Read problem: ${(e as FlutterBluePlusException).description}");
+          }
+        }
+
+
+        int charValue = bytesToIntLE(char.lastValue);
+        int? newCharValue;
+
+        if(charProvider.characteristicsWithMetadata[char.uuid.toString()] != null) {
+          newCharValue = charProvider.characteristicsWithMetadata[char.uuid.toString()]!['new_value'];
+        }
+
+        tempMap[char.uuid.toString()] = {
+          "metadata": characteristicMetadata[char.uuid.toString()],
+          "characteristic": char,
+          "old_value": charValue,
+          "new_value": newCharValue ?? charValue
+        };
+      }
+    }
+
+    BluetoothTransaction newTransaction = BluetoothTransaction(
+        metadata: {
+          "timestamp": DateTime.now().toString(),
+          "updated_characteristics": tempUnsynchronizedCharacteristics
+        },
+        characteristicValues: tempMap.map((key, value) => MapEntry(key, value['new_value'])),
+        sensorData: SensorData.fromRawSensorDataList(rawSensorDataChar.lastValue),
+    );
+
+    charProvider.addTransactionToDatabase(newTransaction);
+
+    charProvider.setCharacteristicsWithMetadata = tempMap;
   }
 
   Future<void> dispose() async {

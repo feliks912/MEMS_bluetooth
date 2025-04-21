@@ -6,9 +6,9 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:yaml/yaml.dart';
-import "helpers.dart";
+import "../helpers.dart";
 import 'dart:convert';
-import 'providers.dart';
+import '../providers.dart';
 
 class CharacteristicList extends StatefulWidget {
   const CharacteristicList({super.key});

@@ -288,11 +288,18 @@ class BluetoothManager {
           tempCharList.firstWhere((char) =>
               char.uuid.toString() == readConfirmationBitUUID);
 
-      rawSensorDataChar = tempCharList.firstWhere((char) =>
-            char.uuid.toString() == sensorDataUUID);
-
       tempCharList.remove(readConfirmationCharacteristic);
-      tempCharList.remove(rawSensorDataChar);
+
+
+      if(tempCharList.any((char) =>
+      char.uuid.toString() == sensorDataUUID)) {
+        rawSensorDataChar = tempCharList.firstWhere((char) =>
+        char.uuid.toString() == sensorDataUUID);
+
+        rawSensorDataChar.read();
+
+        tempCharList.remove(rawSensorDataChar);
+      }
 
       //TODO: Selectively read characteristics instead of reading them all to match metadata
       //TODO: Also implement local database

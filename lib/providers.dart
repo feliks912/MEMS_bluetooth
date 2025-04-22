@@ -16,10 +16,16 @@ class CharProvider extends ChangeNotifier {
 
   bool isRestore = true;
 
-  List<BluetoothTransaction> transactions = [];
-
   final DatabaseManager databaseManager;
 
+  final List<BluetoothTransaction> _transactions = [];
+  List<BluetoothTransaction> get transactions => _transactions;
+
+  set setTransactions(List<BluetoothTransaction> transactions) {
+    _transactions.addAll(transactions);
+    notifyListeners();
+  }
+  
   // List<BluetoothService> _discoveredServices = [];
   // List<BluetoothCharacteristic> _discoveredCharacteristics = [];
 
@@ -36,11 +42,11 @@ class CharProvider extends ChangeNotifier {
   Future<void> _initFromDatabase() async {
     await databaseManager.database; //Wait for the database to initialize
 
-    printWarning("CHAR_PROVIDER: awaited database manager's database object");
+    printWarning("CHAR_PROVIDER: Awaited database manager's database object");
 
     Map<String, Map<String, dynamic>>? tempChars = await databaseManager.restoreCharacteristicsWithMetadata;
 
-    printWarning("CHAR_PROVIDER: awaited database characteristicWithMetadata");
+    printWarning("CHAR_PROVIDER: Awaited database characteristicWithMetadata");
 
     if(tempChars == null) {
       printError("CHAR_PROVIDER: Can't restore characteristics, database manager returned null.");
@@ -49,7 +55,11 @@ class CharProvider extends ChangeNotifier {
 
     setCharacteristicsWithMetadata = tempChars;
 
-    printWarning("CHAR_PROVIDER: set ${tempChars.length} database characteristics with metadata as local.");
+    printWarning("CHAR_PROVIDER: Set ${tempChars.length} database characteristics with metadata as local.");
+
+    printWarning("CHAR_PROVIDER: Restoring transactions...");
+
+    setTransactions = await databaseManager.restoreTransactions() ?? [];
 
     notifyListeners();
   }
@@ -186,6 +196,8 @@ class CharProvider extends ChangeNotifier {
 
   void addTransactionToDatabase(BluetoothTransaction transaction) async {
     await databaseManager.storeTransaction(transaction);
+    _transactions.add(transaction);
+    notifyListeners();
   }
 
   Future<void> _loadCharacteristicMetadata() async {

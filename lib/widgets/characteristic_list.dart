@@ -176,7 +176,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
     }
   }
 
-  Widget charList(context, CharProvider bleData,
+  Widget charList(context, CharProvider charData,
       Map<String, Map<String, dynamic>> charsWithMeta, Color color) {
     return charsWithMeta.isEmpty
         ? const Text("no such characteristics...")
@@ -230,7 +230,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
                                       mainAxisAlignment: MainAxisAlignment.end,
                                       children: [
                                         characteristicSelection(
-                                            bleData, uuid, charsWithMeta)
+                                            charData, uuid, charsWithMeta)
                                       ])),
                             ),
                           ]));
@@ -240,21 +240,21 @@ class _CharacteristicListState extends State<CharacteristicList> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<CharProvider>(builder: (context, bleData, child) {
+    return Consumer<CharProvider>(builder: (context, charData, child) {
       return Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           const Text("Unsynchronized:"),
           Flexible(
             flex: 1,
-            child: charList(context, bleData,
-                bleData.unsynchronizedCharacteristicsWithMetadata, Colors.red),
+            child: charList(context, charData,
+                charData.unsynchronizedCharacteristicsWithMetadata, Colors.red),
           ),
           const Text("Synchronized:"),
           Flexible(
             flex: 1,
-            child: charList(context, bleData,
-                bleData.synchronizedCharacteristicsWithMetadata, Colors.green),
+            child: charList(context, charData,
+                charData.synchronizedCharacteristicsWithMetadata, Colors.green),
           )
         ],
       );

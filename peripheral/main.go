@@ -81,7 +81,7 @@ var (
 	sensorODRCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("4242c0de-f007-4d3c-a1ca-ae3e7e098a2b"),
 	)
-	sensorODR      uint16 = 1000 // 1000 for now, later on will be much higher
+	sensorODR      uint16 = 2500 // 2500 for now, later on will be much higher
 	selfWritingODR bool   = false
 
 	// Sensor data buffer
@@ -89,7 +89,8 @@ var (
 	sensorDataCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("c0debabe-face-4f89-b07d-f9d9b20a76c8"),
 	)
-	serializedSensorData []byte
+	serializedSensorData      []byte
+	serializedSensorDataRange []int
 
 	// Total sensor data in memory, in bytes
 	sensorDataTotalHandle             bluetooth.Characteristic
@@ -287,9 +288,35 @@ var GATTStack = []bluetooth.Service{
 					}
 					confirmReadValue = value
 
-					println("Now we would disconnect if we could.")
+					if confirmReadValue[0] == 0x01 {
+						println("Confirm read value set to:", confirmReadValue, "resetting all values...")
 
-					stopAdvertisingDueToDisconnect = true
+						// Reset sensor data, logs, and memory allocated percentage
+						serializedSensorData = []byte{}
+						sensorDataHandle.Write(serializedSensorData)
+
+						memoryAllocatedPercentage = 0
+						memoryAllocatedPercentageHandle.Write([]byte{memoryAllocatedPercentage})
+
+						serializedDeviceLogData = []byte{}
+						deviceLogHandle.Write(serializedDeviceLogData)
+
+						println("Turning off adapter...")
+
+						stopAdvertisingDueToDisconnect = true
+					} else { // Written 0
+						println("Confirm read value set to:", confirmReadValue, "changing sensor data buffer...")
+
+						if serializedSensorDataRange[1] > len(serializedSensorData) {
+							sensorDataHandle.Write(serializedSensorData[serializedSensorDataRange[0]:])
+							return
+						}
+
+						sensorDataHandle.Write(serializedSensorData[serializedSensorDataRange[0]:serializedSensorDataRange[1]])
+						println("Sensor data buffer changed.")
+						serializedSensorDataRange = []int{serializedSensorDataRange[1], serializedSensorDataRange[1] + 512}
+					}
+
 				},
 			},
 		},
@@ -335,7 +362,7 @@ var GATTStack = []bluetooth.Service{
 				Handle: &sensorDataHandle,
 				UUID:   sensorDataCharacteristicUUID, // UUID: c0debabe-face-4f89-b07d-f9d9b20a76c8
 				Value:  serializedSensorData,
-				Flags:  bluetooth.CharacteristicReadPermission,
+				Flags:  bluetooth.CharacteristicReadPermission | bluetooth.CharacteristicNotifyPermission,
 			},
 			{
 				Handle: &sensorDataClearBitHandle,
@@ -503,41 +530,38 @@ func NewSensorDataHandler(startTime int64, timeLength uint32, rawData []byte) {
 		sensorData: rawData,
 	}
 
-	if true {
+	SerializeSensorData(&serializedSensorData, dataStruct)
+
+	if false {
 		NewLogHandler(startTime+int64(timeLength), "New sensor data received")
 	}
 
-	if false {
-		println("Sensor data received")
-		println("Timestamp:", dataStruct.timestamp)
-		println("Time Length:", dataStruct.timeLength)
-		println("Sensor ODR:", dataStruct.sensorODR)
-		println("Data Length:", dataStruct.dataLength)
+	if true {
+		println("New sensor event:")
+		println("Timestamp:", time.UnixMicro(dataStruct.timestamp).In(time.FixedZone("CEST", 7200)).Format("02.01.2006 15:04:05"))
+		println("Event length:", dataStruct.timeLength, "us")
+		println("Sensor ODR:", dataStruct.sensorODR, "Hz")
 		println("Sensor Data:", dataStruct.sensorData)
-		println("total data length:", len(serializedSensorData))
-		println("Memory Percentage:", memoryAllocatedPercentage)
-		println("Battery Percentage:", batteryPercentage)
+		println("Data length:", dataStruct.dataLength, "raw data points")
+		println("total packet size:", len(serializedSensorData), "bytes")
+		println("Memory consumption:", memoryAllocatedPercentage, "%")
+		println("Battery percentage:", batteryPercentage, "%")
 		println()
 	}
 
-	println("Sensor ODR:", dataStruct.sensorODR)
-
-	SerializeSensorData(&serializedSensorData, dataStruct)
 	memoryAllocatedPercentage = uint8((float64(len(serializedSensorData)) / float64(totalMemory)) * 100 / 2) // Fixed calculation for accuracy
+	memoryAllocatedPercentageHandle.Write([]byte{memoryAllocatedPercentage})
 
 	sensorDataTotal = uint32(len(serializedSensorData))
 	sensorDataTotalHandle.Write(ToByteArray(sensorDataTotal))
 
-	memoryAllocatedPercentageHandle.Write([]byte{memoryAllocatedPercentage})
+	if len(serializedSensorData) <= 512 {
+		serializedSensorDataRange = []int{0, len(serializedSensorData)}
+	} else {
+		serializedSensorDataRange = []int{0, 512}
+	}
 
-	sensorDataHandle.Write(serializedSensorData)
-	//Let's test some random bits instead...
-
-	//randomTempData := make([]byte, 50)
-	//rand.Read(randomTempData)
-
-	//sensorDataHandle.Write(randomTempData)
-	//println("Sending value: ", randomTempData)
+	sensorDataHandle.Write(serializedSensorData[serializedSensorDataRange[0]:serializedSensorDataRange[1]])
 
 	println("New data written to sensorDataHandle. Notifying...")
 
@@ -668,9 +692,9 @@ func main() {
 		must("add service", BLEAdapter.AddService(&service))
 	}
 
-	//go sensorSimulator(sensorODR)
+	go sensorSimulator(sensorODR)
 	go stopAdvertisingRoutine(adv)
-	//go batteryLevelHandler()
+	go batteryLevelHandler()
 	//go advertisingHandler(adv)
 
 	println("Started advertising...")

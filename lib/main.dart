@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:mems_bluetooth/widgets/transaction_list.dart';
+
 import 'database_manager.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -101,42 +103,44 @@ class _MyHomePageState extends State<MyHomePage> {
                 Tab(icon: Icon(Icons.abc)),
                 Tab(icon: Icon(Icons.directions_transit)),
               ]),
-              body: TabBarView(children: [
-                Center(
-                    child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                      AspectRatio(
-                          aspectRatio: 2.0,
-                          child: LineChart(
-                            LineChartData(
-                              lineBarsData: [
-                                LineChartBarData(
-                                  color: Colors.redAccent,
-                                  spots: const [
-                                    FlSpot(1, 1),
-                                    FlSpot(2, 3),
-                                    FlSpot(3, 2),
-                                  ],
-                                  isCurved: true,
-                                  preventCurveOverShooting: true,
-                                  belowBarData: BarAreaData(
-                                      show: true, color: Colors.greenAccent),
-                                  dotData: const FlDotData(
-                                    show: false,
-                                  ),
-                                  barWidth: 3,
-                                  dashArray: [3, 4],
-                                ),
-                              ],
-                              maxX: 0,
-                              minX: 4,
-                            ),
-                          )),
-                    ])),
-                bleData.characteristicsWithMetadata.isEmpty
-                    ? const Center(child: Text("Getting services..."))
-                    : const CharacteristicList(),
+              body: const TabBarView(children: [
+                TransactionList(),
+                // Center(
+                //     child: Column(
+                //         mainAxisAlignment: MainAxisAlignment.center,
+                //         children: [
+                //       AspectRatio(
+                //           aspectRatio: 2.0,
+                //           child: LineChart(
+                //             LineChartData(
+                //               lineBarsData: [
+                //                 LineChartBarData(
+                //                   color: Colors.redAccent,
+                //                   spots: const [
+                //                     FlSpot(1, 1),
+                //                     FlSpot(2, 3),
+                //                     FlSpot(3, 2),
+                //                   ],
+                //                   isCurved: true,
+                //                   preventCurveOverShooting: true,
+                //                   belowBarData: BarAreaData(
+                //                       show: true, color: Colors.greenAccent),
+                //                   dotData: const FlDotData(
+                //                     show: false,
+                //                   ),
+                //                   barWidth: 3,
+                //                   dashArray: [3, 4],
+                //                 ),
+                //               ],
+                //               maxX: 0,
+                //               minX: 4,
+                //             ),
+                //           )),
+                //     ])),
+                // bleData.characteristicsWithMetadata.isEmpty
+                //     ? const Center(child: Text("Getting services..."))
+                //     : const CharacteristicList(),
+                CharacteristicList()
               ])));
     });
 

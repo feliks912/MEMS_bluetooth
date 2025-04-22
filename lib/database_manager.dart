@@ -52,7 +52,7 @@ class DatabaseManager {
       _database =
           await databaseFactoryIo.openDatabase(path, version: databaseVersion);
 
-      printWarning("DATABASE: Database oppened");
+      printWarning("DATABASE: Database opened");
 
       _dbCompleter.complete(_database);
     } catch (e) {
@@ -149,6 +149,35 @@ class DatabaseManager {
       printError("DATABASE: Can't write transaction: $e");
       return Future.value(null);
     }
+  }
+
+  Future<List<BluetoothTransaction>?> restoreTransactions() async {
+
+    if(_database == null) {
+      printError("DATABASE: Can't restore transaction, _database is null.");
+      return Future.value(null);
+    }
+
+    List<BluetoothTransaction> transactions = [];
+
+    try {
+      final storeSnapshot = await transactionStore.find(_database!);
+      printWarning("DATABASE: Fetched transaction store snapshot");
+      try {
+        for(var element in storeSnapshot) {
+          transactions.insert(0, BluetoothTransaction.fromSembastMap(element.value));
+        }
+      } catch (e) {
+        printError("TYPES: Can't create BLuetoothTransaction from sembast map: $e");
+      }
+
+
+      printWarning("DATABASE: Restored ${transactions.length} transactions from state.");
+    } catch(e) {
+      printError("DATABASE: Can't restore transactions from state: $e");
+    }
+
+    return transactions;
   }
 
   Future<BluetoothTransaction?> readTransaction(int key) async {

@@ -13,6 +13,7 @@ Communication app for ultra low power MEMS Bluetooth module.
 * * D doesn't support BluetoothCharacteristic, I must contend with the fact that we'll be starting an application with nonexistent characteristics.......
 * * Which should be possible, in fact almost without an issue?
 * Fix range checking, sometimes 
+* Large sensor data: discover characteristics, subscribe to sensor data, on new data add it to buffer and send confirmation bit. When the sensor data isn't full (mtu sized) continue reading characteristics as normal. On Linux's side change the sensor data buffer each time the data read confirmation bit is received. On sensor data read send 0, on characteristic data read send 1. On central: discover characteristics, read data length characteristic. If Total Sensor Data <= mtu (512 for Go program) read sensor data, otherwise subscribe to sensor data, receive it, and write 0 to read confirmation bit.
 
 #TODO:
 * sensor data display

@@ -1,24 +1,16 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:mems_bluetooth/widgets/transaction_list.dart';
 
 import 'database_manager.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:toastification/toastification.dart';
-import "helpers.dart";
 import "bluetooth_manager.dart";
-import 'package:collection/collection.dart';
-import 'dart:typed_data';
 import "widgets/characteristic_list.dart";
 import 'package:provider/provider.dart';
 import 'providers.dart';
 
 Future<void> main() async {
-
   const String deviceName = "TinyGo Sensor";
   const String deviceMAC = "80:32:53:74:15:A7";
 
@@ -26,9 +18,11 @@ Future<void> main() async {
 
   final DatabaseManager databaseManager = DatabaseManager();
 
+  await databaseManager.database; //Ensure db is initialized.
+
   final charProvider = CharProvider(databaseManager: databaseManager);
 
-  BluetoothManager BLEManager = BluetoothManager(deviceMAC, deviceName, charProvider);
+  BluetoothManager(deviceMAC, deviceName, charProvider);
 
   runApp(MultiProvider(providers: [
     Provider(create: (context) => UserData()),
@@ -154,7 +148,7 @@ class _MyHomePageState extends State<MyHomePage> {
         //       child: FloatingActionButton(
         //         onPressed: _incrementCounter,
         //         tooltip: 'Increment',
-        //         child: cosnst Icon(Icons.add),
+        //         child: const Icon(Icons.add),
         //       ),
         //     ),
         //     FloatingActionButton(

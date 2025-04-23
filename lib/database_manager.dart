@@ -8,16 +8,16 @@ import 'package:sembast/sembast_io.dart';
 import 'helpers.dart';
 import 'types.dart';
 
-
-
 class DatabaseManager {
   static DatabaseManager? _instance;
   static Database? _database;
   final Completer<Database> _dbCompleter = Completer<Database>();
   final StoreRef<Object?, Object?> store = StoreRef.main();
 
-  final StoreRef<String, Map<String, Object?>> characteristicsStateStore = stringMapStoreFactory.store('characteristics_state');
-  final StoreRef<int, Map<String, dynamic>> transactionStore = intMapStoreFactory.store('transactions');
+  final StoreRef<String, Map<String, Object?>> characteristicsStateStore =
+      stringMapStoreFactory.store('characteristics_state');
+  final StoreRef<int, Map<String, dynamic>> transactionStore =
+      intMapStoreFactory.store('transactions');
 
   static const int databaseVersion = 1;
   static const String databaseTitle = "Main MEMS Sensor Mobile database";
@@ -34,14 +34,13 @@ class DatabaseManager {
   }
 
   void _initDatabase() async {
-
-
     final Directory dbPath;
 
     try {
       dbPath = await getApplicationDocumentsDirectory();
-      printWarning("DATABASE: Fetched application documents directory: ${dbPath.path}");
-    } catch(e) {
+      printWarning(
+          "DATABASE: Fetched application documents directory: ${dbPath.path}");
+    } catch (e) {
       printError("DATABASE: Can't get application document path.");
       return;
     }
@@ -53,6 +52,10 @@ class DatabaseManager {
           await databaseFactoryIo.openDatabase(path, version: databaseVersion);
 
       printWarning("DATABASE: Database opened");
+
+      // await _database!.dropAll();
+      // printError("Database dropped.");
+      // exit(1);
 
       _dbCompleter.complete(_database);
     } catch (e) {
@@ -80,48 +83,52 @@ class DatabaseManager {
     }
   }
 
-  Future<int> updateCharacteristicWithMetadata(String uuid, Map<String, dynamic> char) async {
-
+  Future<int> updateCharacteristicWithMetadata(
+      String uuid, Map<String, dynamic> char) async {
     // BluetoothCharacteristic can't be written to the database
     // TODO: Make sure characteristic is only read over metadata instead of char before being re-discovered on the next connect.
     char['characteristic'] = null;
 
-    if(_database == null) {
-      printError("DATABASE: Can't update characteristic with metadata, _database is null.");
+    if (_database == null) {
+      printError(
+          "DATABASE: Can't update characteristic with metadata, _database is null.");
       return 0;
     }
 
     try {
       await characteristicsStateStore.record(uuid).put(_database!, char);
-      printWarning("DATABASE: Updated database characteristic $uuid with new value ${char.toString()}");
+      printWarning(
+          "DATABASE: Updated database characteristic $uuid with new value ${char.toString()}");
       return 1;
-    } catch(e) {
+    } catch (e) {
       printError("DATABASE: Can't update characteristic with metadata: $e");
     }
 
     return 0;
   }
 
-  Future<Map<String, Map<String, dynamic>>?> get restoreCharacteristicsWithMetadata async {
+  Future<Map<String, Map<String, dynamic>>?>
+      get restoreCharacteristicsWithMetadata async {
     //FIXME: Add await for store snapshot on all getters.
 
-    if(_database == null) {
-      printError("DATABASE: Can't restore characteristics with metadata, _database is null.");
+    if (_database == null) {
+      printError(
+          "DATABASE: Can't restore characteristics with metadata, _database is null.");
       return null;
     }
 
     try {
       final Map<String, Map<String, dynamic>> returnMap = {};
       final storeSnapshot = await characteristicsStateStore.find(_database!);
-      for(final record in storeSnapshot) {
+      for (final record in storeSnapshot) {
         returnMap[record.key] = record.value;
       }
 
-      printWarning("DATABASE: Restored ${returnMap.length} characteristics from state.");
+      printWarning(
+          "DATABASE: Restored ${returnMap.length} characteristics from state.");
 
       return returnMap;
-
-    } catch(e) {
+    } catch (e) {
       printError("DATABASE: Can't restore characteristics, $e");
     }
 
@@ -129,31 +136,30 @@ class DatabaseManager {
   }
 
   Future<int?> storeTransaction(BluetoothTransaction transaction) async {
-
-    if(_database == null) {
+    if (_database == null) {
       printError("DATABASE: Can't write transaction, _database is null.");
       return Future.value(null);
     }
 
     try {
       int? returnKey;
-      final storeSnapshot = await transactionStore.find(_database!);
       //FIXME: Switch await for future completer, but for this much data don't bother.
-      printWarning("DATABASE: Starting write of transaction to database: ${transaction.toString()}");
+      printWarning(
+          "DATABASE: Starting write of transaction to database: ${transaction.toString()}");
       _database!.transaction((txn) async {
         returnKey = await transactionStore.add(txn, transaction.toSembastMap());
       });
-      printWarning("DATABASE: Written Transaction to database: ${transaction.toString()}");
+      printWarning(
+          "DATABASE: Written Transaction to database: ${transaction.toString()}");
       return returnKey;
-    } catch(e) {
+    } catch (e) {
       printError("DATABASE: Can't write transaction: $e");
       return Future.value(null);
     }
   }
 
   Future<List<BluetoothTransaction>?> restoreTransactions() async {
-
-    if(_database == null) {
+    if (_database == null) {
       printError("DATABASE: Can't restore transaction, _database is null.");
       return Future.value(null);
     }
@@ -164,16 +170,18 @@ class DatabaseManager {
       final storeSnapshot = await transactionStore.find(_database!);
       printWarning("DATABASE: Fetched transaction store snapshot");
       try {
-        for(var element in storeSnapshot) {
-          transactions.insert(0, BluetoothTransaction.fromSembastMap(element.value));
+        for (var element in storeSnapshot) {
+          transactions.insert(
+              0, BluetoothTransaction.fromSembastMap(element.value));
         }
       } catch (e) {
-        printError("TYPES: Can't create BLuetoothTransaction from sembast map: $e");
+        printError(
+            "TYPES: Can't create BluetoothTransaction from Ssembast map: $e");
       }
 
-
-      printWarning("DATABASE: Restored ${transactions.length} transactions from state.");
-    } catch(e) {
+      printWarning(
+          "DATABASE: Restored ${transactions.length} transactions from state.");
+    } catch (e) {
       printError("DATABASE: Can't restore transactions from state: $e");
     }
 
@@ -181,13 +189,13 @@ class DatabaseManager {
   }
 
   Future<BluetoothTransaction?> readTransaction(int key) async {
-
     Map<String, Object?>? transactionMap;
 
     try {
       Object? tempObject = await transactionStore.record(key).get(_database!);
-      if(tempObject == null) {
-        printError("DATABASE: Can't read transaction from _database: transaction tempObject is null.");
+      if (tempObject == null) {
+        printError(
+            "DATABASE: Can't read transaction from _database: transaction tempObject is null.");
         return null;
       }
       transactionMap = tempObject as Map<String, Object>;
@@ -196,14 +204,16 @@ class DatabaseManager {
       return null;
     }
 
-    BluetoothTransaction tempTransaction = BluetoothTransaction.fromSembastMap(transactionMap);
+    BluetoothTransaction tempTransaction =
+        BluetoothTransaction.fromSembastMap(transactionMap);
 
-    printWarning("DATABASE: Successfully read transaction from database: ${tempTransaction.toString()}");
+    printWarning(
+        "DATABASE: Successfully read transaction from database: ${tempTransaction.toString()}");
 
     return tempTransaction;
   }
 
-  Future<bool> databaseWrite(Object key, Object value) async {
+  Future<bool> storeData(Object key, Object value) async {
     await _dbCompleter.future;
 
     if (_database == null) {
@@ -220,7 +230,7 @@ class DatabaseManager {
     return false;
   }
 
-  Future<Object?> databaseRead(Object key) async {
+  Future<Object?> fetchData(Object key) async {
     await _dbCompleter.future;
 
     if (_database == null) {

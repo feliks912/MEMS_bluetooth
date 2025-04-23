@@ -1,13 +1,7 @@
-import 'dart:collection';
-import 'dart:io';
-import 'dart:async';
 import 'package:flutter/services.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:yaml/yaml.dart';
 import "../helpers.dart";
-import 'dart:convert';
 import '../providers.dart';
 
 class CharacteristicList extends StatefulWidget {
@@ -34,9 +28,8 @@ class _CharacteristicListState extends State<CharacteristicList> {
     }
   }
 
-  Widget characteristicSelection(
-      CharProvider charProvider, String uuid, Map<String, Map<String, dynamic>> charsWithMeta) {
-
+  Widget characteristicSelection(CharProvider charProvider, String uuid,
+      Map<String, Map<String, dynamic>> charsWithMeta) {
     Map<String, dynamic> charWithMeta = charsWithMeta[uuid]!;
 
     int previousNewValue = charWithMeta['new_value'];
@@ -55,8 +48,8 @@ class _CharacteristicListState extends State<CharacteristicList> {
       printWarning(
           "WIDGET_CHARACTERISTICS: For now a lack of 'editing' field in meta means it's read only. Todo separate access variable in metadata.");
       return Column(
-            children: [Text(previousNewValue.toString())],
-          );
+        children: [Text(previousNewValue.toString())],
+      );
     }
 
     String selectionType = charWithMeta['metadata']['editing'];
@@ -64,7 +57,8 @@ class _CharacteristicListState extends State<CharacteristicList> {
     switch (selectionType) {
       case "selection":
         if (charWithMeta['metadata']['selection_options'] == null) {
-          printError("WIDGET_CHARACTERISTICS: Editing is 'selection' but selection_options is null");
+          printError(
+              "WIDGET_CHARACTERISTICS: Editing is 'selection' but selection_options is null");
           return const Text("Error: Missing selection options");
         }
 
@@ -84,7 +78,8 @@ class _CharacteristicListState extends State<CharacteristicList> {
               try {
                 charProvider.editLocalCharValue(uuid, int.parse(selection));
               } on FormatException catch (e) {
-                printError("WIDGET_CHARACTERISTICS: String to int parsing error in selection: $e");
+                printError(
+                    "WIDGET_CHARACTERISTICS: String to int parsing error in selection: $e");
               }
             }
           },
@@ -93,7 +88,8 @@ class _CharacteristicListState extends State<CharacteristicList> {
 
       case "checkbox":
         if (charWithMeta['metadata']['data_type'] != 'bool') {
-          printError("WIDGET_CHARACTERISTICS: Editing is 'checkbox' but variable isn't bool.");
+          printError(
+              "WIDGET_CHARACTERISTICS: Editing is 'checkbox' but variable isn't bool.");
           return const Text("Error: Wrong char var type.");
         }
 
@@ -107,12 +103,13 @@ class _CharacteristicListState extends State<CharacteristicList> {
 
       case "write":
         if (charWithMeta['metadata']['range'] == null) {
-          printError("WIDGET_CHARACTERISTICS: Editing is 'write' but 'range' isn't defined.");
+          printError(
+              "WIDGET_CHARACTERISTICS: Editing is 'write' but 'range' isn't defined.");
           return const Text("Range property missing from 'writing' edit.");
         }
 
         final TextEditingController textController =
-            TextEditingController(text: previousNewValue.toString() ?? '');
+            TextEditingController(text: previousNewValue.toString());
 
         void handleSubmit(String text) {
           printWarning("WIDGET_CHARACTERISTICS: Entered handleSubmit");
@@ -130,7 +127,8 @@ class _CharacteristicListState extends State<CharacteristicList> {
           try {
             newValue = int.parse(text);
           } on FormatException catch (e) {
-            printError("WIDGET_CHARACTERISTICS: Parsing text as digits failed: $e");
+            printError(
+                "WIDGET_CHARACTERISTICS: Parsing text as digits failed: $e");
           }
 
           if (newValue == null) {
@@ -145,15 +143,18 @@ class _CharacteristicListState extends State<CharacteristicList> {
           }
 
           if (newValue <= rangeOptionsInt.first) {
-            printError("WIDGET_CHARACTERISTICS: Min allowed value is ${rangeOptionsInt.first}");
+            printError(
+                "WIDGET_CHARACTERISTICS: Min allowed value is ${rangeOptionsInt.first}");
             newValue = rangeOptionsInt.first;
           } else if (newValue >= rangeOptionsInt.last) {
-            printError("WIDGET_CHARACTERISTICS: Max allowed value is ${rangeOptionsInt.last}");
+            printError(
+                "WIDGET_CHARACTERISTICS: Max allowed value is ${rangeOptionsInt.last}");
             newValue = rangeOptionsInt.last;
           }
 
           charProvider.editLocalCharValue(uuid, newValue);
-          printWarning("WIDGET_CHARACTERISTICS: Text input parsed to char value...");
+          printWarning(
+              "WIDGET_CHARACTERISTICS: Text input parsed to char value...");
         }
 
         return TextField(
@@ -197,7 +198,6 @@ class _CharacteristicListState extends State<CharacteristicList> {
 
                   final charMetadata =
                       charsWithMeta[uuid]!['metadata'] as Map<String, dynamic>;
-
 
                   return Container(
                       margin: const EdgeInsets.symmetric(

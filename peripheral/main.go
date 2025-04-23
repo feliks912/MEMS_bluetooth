@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -89,15 +90,19 @@ var (
 	sensorDataCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("c0debabe-face-4f89-b07d-f9d9b20a76c8"),
 	)
-	serializedSensorData      []byte
-	serializedSensorDataRange []int
+	serializedSensorData       []byte
+	serializedSensorDataRange  []int
+	serializedSensorDataMutex  sync.Mutex
+	sensorDataInTransfer       bool = false
+	sensorDataMaxTransferChunk      = 420
 
 	// Total sensor data in memory, in bytes
 	sensorDataTotalHandle             bluetooth.Characteristic
 	sensorDataTotalCharacteristicUUID = bluetooth.NewUUID(
 		uuid.MustParse("0badf00d-cafe-4b1b-9b1b-2c931b1b1b1b"),
 	)
-	sensorDataTotal uint32 = 0
+	sensorDataTotal               uint32 = 0
+	sensorDataTotalAtBufferChange uint32 = 0
 )
 
 // BLE core configuration
@@ -282,21 +287,40 @@ var GATTStack = []bluetooth.Service{
 				Value:  confirmReadValue,
 				Flags:  bluetooth.CharacteristicWritePermission,
 				WriteEvent: func(client bluetooth.Connection, offset int, value []byte) {
+
+					//FIXME: If new sensor data is written between the reading of the old one and confirmation of reading old one, it will be lost.
+					//Instead we must count the data. If the data length is higher than the data length at the moment of the read, we remove all but the new data.
+					// Each time 0x00 is received and data must be shuffled, we note the amount of data in the buffer.
+					// If data length is larger at the moment 0x01 is received, a part of data hasn't been sent and must be stored.
+
+					sensorDataInTransfer = true
+
+					serializedSensorDataMutex.Lock()
+					defer serializedSensorDataMutex.Unlock()
+
 					if offset != 0 || len(value) != 1 {
 						println("Bad ConfirmRead value: ", value)
 						return
 					}
+
 					confirmReadValue = value
 
 					if confirmReadValue[0] == 0x01 {
-						println("Confirm read value set to:", confirmReadValue, "resetting all values...")
+						println("Confirm read value set to:", confirmReadValue[0], "resetting all values...")
 
-						// Reset sensor data, logs, and memory allocated percentage
-						serializedSensorData = []byte{}
-						sensorDataHandle.Write(serializedSensorData)
+						clearTransfer := func() {
+							sensorDataInTransfer = false
+						}
 
-						memoryAllocatedPercentage = 0
-						memoryAllocatedPercentageHandle.Write([]byte{memoryAllocatedPercentage})
+						defer clearTransfer()
+
+						serializedSensorData = serializedSensorData[serializedSensorDataRange[1]:]
+
+						if len(serializedSensorData) <= sensorDataMaxTransferChunk {
+							sensorDataHandle.Write(serializedSensorData)
+						} else {
+							sensorDataHandle.Write(serializedSensorData[:sensorDataMaxTransferChunk])
+						}
 
 						serializedDeviceLogData = []byte{}
 						deviceLogHandle.Write(serializedDeviceLogData)
@@ -305,16 +329,24 @@ var GATTStack = []bluetooth.Service{
 
 						stopAdvertisingDueToDisconnect = true
 					} else { // Written 0
-						println("Confirm read value set to:", confirmReadValue, "changing sensor data buffer...")
 
-						if serializedSensorDataRange[1] > len(serializedSensorData) {
-							sensorDataHandle.Write(serializedSensorData[serializedSensorDataRange[0]:])
+						sensorDataTotalAtBufferChange = sensorDataTotal
+
+						println("Confirm read value set to:", confirmReadValue[0], "changing sensor data buffer...")
+
+						// Discard read sensor data
+						serializedSensorData = serializedSensorData[serializedSensorDataRange[1]:]
+
+						if len(serializedSensorData) <= sensorDataMaxTransferChunk {
+							sensorDataHandle.Write(serializedSensorData)
+							serializedSensorDataRange = []int{0, len(serializedSensorData)}
 							return
 						}
 
-						sensorDataHandle.Write(serializedSensorData[serializedSensorDataRange[0]:serializedSensorDataRange[1]])
+						serializedSensorDataRange = []int{0, sensorDataMaxTransferChunk}
+						sensorDataHandle.Write(serializedSensorData[:sensorDataMaxTransferChunk])
 						println("Sensor data buffer changed.")
-						serializedSensorDataRange = []int{serializedSensorDataRange[1], serializedSensorDataRange[1] + 512}
+
 					}
 
 				},
@@ -522,6 +554,10 @@ func SerializeSensorData(result *[]byte, dataStruct sensorDataStruct) {
 }
 
 func NewSensorDataHandler(startTime int64, timeLength uint32, rawData []byte) {
+
+	serializedSensorDataMutex.Lock()
+	defer serializedSensorDataMutex.Unlock()
+
 	dataStruct := sensorDataStruct{
 		timestamp:  startTime,
 		timeLength: timeLength,
@@ -542,7 +578,7 @@ func NewSensorDataHandler(startTime int64, timeLength uint32, rawData []byte) {
 		println("Event length:", dataStruct.timeLength, "us")
 		println("Sensor ODR:", dataStruct.sensorODR, "Hz")
 		println("Sensor Data:", dataStruct.sensorData)
-		println("Data length:", dataStruct.dataLength, "raw data points")
+		println("Data length:", dataStruct.dataLength, "raw bytes")
 		println("total packet size:", len(serializedSensorData), "bytes")
 		println("Memory consumption:", memoryAllocatedPercentage, "%")
 		println("Battery percentage:", batteryPercentage, "%")
@@ -555,10 +591,15 @@ func NewSensorDataHandler(startTime int64, timeLength uint32, rawData []byte) {
 	sensorDataTotal = uint32(len(serializedSensorData))
 	sensorDataTotalHandle.Write(ToByteArray(sensorDataTotal))
 
-	if len(serializedSensorData) <= 512 {
+	if sensorDataInTransfer {
+		println("New data written to serializedSensorData but ot sensorDataHandle due to ongoing transfer.")
+		return
+	}
+
+	if len(serializedSensorData) <= sensorDataMaxTransferChunk {
 		serializedSensorDataRange = []int{0, len(serializedSensorData)}
 	} else {
-		serializedSensorDataRange = []int{0, 512}
+		serializedSensorDataRange = []int{0, sensorDataMaxTransferChunk}
 	}
 
 	sensorDataHandle.Write(serializedSensorData[serializedSensorDataRange[0]:serializedSensorDataRange[1]])
@@ -567,22 +608,32 @@ func NewSensorDataHandler(startTime int64, timeLength uint32, rawData []byte) {
 
 }
 
-func sensorSimulator(ODR uint16) {
+func sensorSimulator() {
 	for {
 		startTimestamp := time.Now().UnixMicro()
 
 		// The length of the data is random - between 3 and 10
 		randomDataLength := rand.Int()%7 + 3
 
-		dataBuffer := make([]byte, randomDataLength*2) // 2 bytes per data point for a 8+ bit sensor
+		var dataBuffer []byte // 2 bytes per data point for a 8+ bit sensor
 
 		for range randomDataLength {
 			randomData := uint16(rand.Int() % 1024) // 10 bit sensor?
 
-			time.Sleep(time.Duration(1_000_000/uint32(ODR)) * time.Microsecond)
+			time.Sleep(time.Duration(1_000_000/uint32(sensorODR)) * time.Microsecond)
+
+			tempData := ToByteArray(randomData)
+
+			if tempData[0] > 1 {
+			}
+
+			print(randomData, " ")
+			print(ToByteArray(randomData), " ")
+			println()
 
 			dataBuffer = append(dataBuffer, ToByteArray(randomData)...)
 		}
+		println("dataBuffer: ", dataBuffer)
 
 		timeLength := time.Now().UnixMicro() - startTimestamp
 
@@ -650,6 +701,24 @@ func setAdapterPowerState(state bool) error {
 	return cmd.Run()
 }
 
+func userInputListener(adv *bluetooth.Advertisement) {
+	for {
+		input := bufio.NewScanner(os.Stdin)
+		input.Scan()
+
+		if input.Text() == "on" {
+			setAdapterPowerState(true)
+
+			time.Sleep(time.Second * 2) // Wait for the adapter to be ready
+
+			adv.Start()
+		} else if input.Text() == "off" {
+			adv.Stop()
+			setAdapterPowerState(false)
+		}
+	}
+}
+
 func stopAdvertisingRoutine(adv *bluetooth.Advertisement) {
 	for {
 		if stopAdvertisingDueToDisconnect {
@@ -692,7 +761,8 @@ func main() {
 		must("add service", BLEAdapter.AddService(&service))
 	}
 
-	go sensorSimulator(sensorODR)
+	go userInputListener(adv)
+	go sensorSimulator()
 	go stopAdvertisingRoutine(adv)
 	go batteryLevelHandler()
 	//go advertisingHandler(adv)

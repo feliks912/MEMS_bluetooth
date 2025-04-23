@@ -13,29 +13,32 @@ class BluetoothTransaction {
   @override
   String toString() {
     // TODO: implement toString
-    String metadataString = metadata.entries.map((e) => "${e.key}: ${e.value}").join(", ");
-    String characteristicValuesString = characteristicValues.entries.map((e) => "${e.key}: ${e.value}").join(", ");
+    String metadataString =
+        metadata.entries.map((e) => "${e.key}: ${e.value}").join(", ");
+    String characteristicValuesString = characteristicValues.entries
+        .map((e) => "${e.key}: ${e.value}")
+        .join(", ");
     String sensorDataString = sensorData.map((e) => e.toString()).join(", ");
 
     return "BluetoothTransaction(metadata: {$metadataString}, characteristicValues: {$characteristicValuesString}, sensorData: {$sensorDataString})";
   }
-  
+
   Map<String, dynamic> toSembastMap() {
     return {
       "metadata": metadata,
       "characteristic_values": characteristicValues,
-      "sensor_data": sensorData.map((element) => element.toSembastMap()).toList(),
+      "sensor_data":
+          sensorData.map((element) => element.toSembastMap()).toList(),
     };
   }
 
   factory BluetoothTransaction.fromSembastMap(Map<String, Object?> map) {
-
     Map<String, Object?> tempCharMap = <String, Object?>{};
     List<Map<String, dynamic>> tempSensorDataMap = <Map<String, dynamic>>[];
 
     try {
       tempCharMap = map['characteristic_values'] as Map<String, Object?>;
-    } catch(e) {
+    } catch (e) {
       printError("TYPES: Can't cast tempCharMap");
     }
 
@@ -43,24 +46,28 @@ class BluetoothTransaction {
       List<Object?> tempSensorDataList = map['sensor_data'] as List<Object?>;
 
       try {
-        tempSensorDataMap = tempSensorDataList.map((element) => element as Map<String, dynamic>).toList();
-      } catch(e) {
+        tempSensorDataMap = tempSensorDataList
+            .map((element) => element as Map<String, dynamic>)
+            .toList();
+      } catch (e) {
         printError("TYPES: Can't cast tempSensorDataMap");
       }
-
-    } catch(e) {
+    } catch (e) {
       printError("TYPES: Can't cast tempSensorDataList");
     }
 
     try {
       return BluetoothTransaction(
-        metadata: map['metadata'] as dynamic,
-        characteristicValues: tempCharMap.map((key, value) => MapEntry(key, value as int)),
-        sensorData: tempSensorDataMap.map((element) => SensorData.fromSembastMap(element)).toList()
-      );
-    } catch(e) {
+          metadata: map['metadata'] as dynamic,
+          characteristicValues:
+              tempCharMap.map((key, value) => MapEntry(key, value as int)),
+          sensorData: tempSensorDataMap
+              .map((element) => SensorData.fromSembastMap(element))
+              .toList());
+    } catch (e) {
       printError("TYPES: Can't create BluetoothTransaction: $e");
-      return const BluetoothTransaction(metadata: {}, characteristicValues: {}, sensorData: []);
+      return const BluetoothTransaction(
+          metadata: {}, characteristicValues: {}, sensorData: []);
     }
   }
 }
@@ -97,33 +104,42 @@ class SensorData {
   }
 
   static List<SensorData> fromRawSensorDataList(List<int> list) {
-
     List<SensorData> sensorDataList = [];
-    while(list.length > 16) {
+    while (list.length > 16) {
       SensorData sensorData = SensorData.fromBytesList(list);
       sensorDataList.add(sensorData);
-      list = list.sublist(sensorData.lengthData * 2 + 16); //lengthData is for int, this are raw bytes
-      if(list.isNotEmpty) break;
+      list = list.sublist(sensorData.lengthData * 2 +
+          16); //lengthData is for int, this are raw bytes
+      if (list.isEmpty) break;
     }
-    //printWarning("Created List<SensorData> from ${sensorDataList.length} sensor events.");
+    printWarning(
+        "Created List<SensorData> from ${sensorDataList.length} sensor events.");
     return sensorDataList;
   }
 
   factory SensorData.fromBytesList(List<int> list) {
-    int dataLength = bytesToIntLE(list.sublist(14, 16)) ~/ 2;
+    int lengthData = bytesToIntLE(list.sublist(14, 16)) ~/ 2;
 
     SensorData data = SensorData(
         startTime: bytesToIntLE(list.sublist(0, 8)),
         lengthTime: bytesToIntLE(list.sublist(8, 12)),
         ODR: bytesToIntLE(list.sublist(12, 14)),
-        lengthData: dataLength,
-        rawData: List.generate(dataLength , (index) {
+        lengthData: lengthData,
+        rawData: List.generate(lengthData, (index) {
           int startIndex = index * 2;
-          if(startIndex + 1 < dataLength) {
-            return bytesToIntLE([list[16 + startIndex], list[17 + startIndex]]);
+          try {
+            if (startIndex + 1 < lengthData * 2) {
+              int firstByte = list[16 + startIndex];
+              int secondByte = list[17 + startIndex];
+              return bytesToIntLE([firstByte, secondByte]);
+            }
+            printError("TYPES: Error when converting daa from octets: if statement exited, returning '-1'");
+            return -1;
+          } catch (e) {
+            printError(
+                "TYPES: Error when converting sensor data from octets: $e");
+            return -1;
           }
-          printError("TYPES: Error when converting sensor data from octets.");
-          return -1;
         }));
     //printWarning("Created SensorData with ${data.rawData.length} discrete readouts.");
     return data;
@@ -135,7 +151,10 @@ class SensorData {
       lengthTime: map['length_time'] as int,
       ODR: map['ODR'] as int,
       lengthData: map['length_data'] as int,
-      rawData: (map['raw_data'] as Iterable<Object?>?)?.map((element) => element as int).toList() ?? [],
+      rawData: (map['raw_data'] as Iterable<Object?>?)
+              ?.map((element) => element as int)
+              .toList() ??
+          [],
     );
   }
 }

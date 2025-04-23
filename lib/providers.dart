@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
-import 'package:sembast/sembast.dart';
 import 'helpers.dart';
 import 'types.dart';
 
@@ -13,19 +10,59 @@ import 'database_manager.dart';
 class UserData extends ChangeNotifier {}
 
 class CharProvider extends ChangeNotifier {
-
   bool isRestore = true;
 
   final DatabaseManager databaseManager;
 
-  final List<BluetoothTransaction> _transactions = [];
+  List<BluetoothTransaction> _transactions = [];
+
   List<BluetoothTransaction> get transactions => _transactions;
 
-  set setTransactions(List<BluetoothTransaction> transactions) {
-    _transactions.addAll(transactions);
+  int _partialTransferTotalDataLength = 0;
+
+  int get partialTransferTotalDataLength => _partialTransferTotalDataLength;
+
+  set setPartialTransferTotalDataLength(int length) {
+    _partialTransferTotalDataLength = length;
     notifyListeners();
   }
-  
+
+  List<int> _partialRawSensorData = [];
+
+  set setPartialRawSensorData(List<int> data) {
+    _partialRawSensorData = data;
+    notifyListeners();
+  }
+
+  List<int> get partialRawSensorData => _partialRawSensorData;
+
+  void storePartialTransferData(List<int> data, int totalDataLength) {
+    _partialRawSensorData = data;
+    _partialTransferTotalDataLength = totalDataLength;
+
+    try {
+      databaseManager.storeData("sensor_partial_data", data);
+      printWarning("DATABASE: Stored ${data.length} remaining raw data bits into sensor_partial_data");
+    } catch(e) {
+      printError("DATABASE: Can't store ${data.length} remaining raw data bits into sensor_partial_data: $e");
+    }
+
+    try {
+      databaseManager.storeData("partial_transfer_total_data_length", totalDataLength);
+      printWarning("DATABASE: Stored $totalDataLength into partial_transfer_total_data_length");
+    } catch (e) {
+      printError("Can't store $totalDataLength into partial_transfer_total_data_length");
+    }
+
+    notifyListeners();
+  }
+
+  //FIXME: Naming scheme - adding isn't setting.
+  set setTransactions(List<BluetoothTransaction> transactions) {
+    _transactions = transactions;
+    notifyListeners();
+  }
+
   // List<BluetoothService> _discoveredServices = [];
   // List<BluetoothCharacteristic> _discoveredCharacteristics = [];
 
@@ -36,32 +73,62 @@ class CharProvider extends ChangeNotifier {
   CharProvider({required this.databaseManager}) {
     _metadataLoadFuture = _loadCharacteristicMetadata();
     _initFromDatabase();
-    printWarning("CHAR_PROVIDER: Supposedly initialized characteristics provider...");
+    printWarning(
+        "CHAR_PROVIDER: Supposedly initialized characteristics provider...");
   }
 
   Future<void> _initFromDatabase() async {
-    await databaseManager.database; //Wait for the database to initialize
+    await databaseManager.database;   //Wait for the database to initialize
 
     printWarning("CHAR_PROVIDER: Awaited database manager's database object");
 
-    Map<String, Map<String, dynamic>>? tempChars = await databaseManager.restoreCharacteristicsWithMetadata;
+    Map<String, Map<String, dynamic>>? tempChars =
+        await databaseManager.restoreCharacteristicsWithMetadata;
 
     printWarning("CHAR_PROVIDER: Awaited database characteristicWithMetadata");
 
-    if(tempChars == null) {
-      printError("CHAR_PROVIDER: Can't restore characteristics, database manager returned null.");
+    if (tempChars == null) {
+      printError(
+          "CHAR_PROVIDER: Can't restore characteristics, database manager returned null.");
       return;
     }
 
     setCharacteristicsWithMetadata = tempChars;
 
-    printWarning("CHAR_PROVIDER: Set ${tempChars.length} database characteristics with metadata as local.");
+    printWarning(
+        "CHAR_PROVIDER: Set ${tempChars.length} database characteristics with metadata as local.");
 
     printWarning("CHAR_PROVIDER: Restoring transactions...");
 
     setTransactions = await databaseManager.restoreTransactions() ?? [];
 
+    _restorePartialTransferData();
+
     notifyListeners();
+  }
+
+  void _restorePartialTransferData() async {
+
+    Object? rawData = await databaseManager.fetchData("partial_sensor_data");
+
+    if(rawData != null) {
+      setPartialRawSensorData = rawData as List<int>;
+      printWarning("DATABASE: Restored ${partialRawSensorData.length} remaining raw data bits from sensor_partial_data");
+    } else {
+      setPartialRawSensorData = [];
+      printWarning("DATABASE: sensor_partial_data is null (set to empty list).");
+    }
+
+    Object? dataLength = await databaseManager.fetchData("partial_transfer_total_data_length");
+
+    if(dataLength != null) {
+      setPartialTransferTotalDataLength = dataLength as int;
+      printWarning("DATABASE: Restored $partialTransferTotalDataLength from partial_transfer_total_data_length.");
+    } else {
+      setPartialTransferTotalDataLength = 0;
+      printWarning("DATABASE: partial_transfer_total_data_length is null (set to 0)");
+    }
+
   }
 
   // List<BluetoothService> get discoveredServices => _discoveredServices;
@@ -106,33 +173,38 @@ class CharProvider extends ChangeNotifier {
   set setCharacteristicsWithMetadata(Map<String, Map<String, dynamic>> mds) {
     //TODO: remove old characteristics, ones which don't exist neither in discoveredCharacteristics or characteristicsWithMetadata
 
-    if(mds.isEmpty && isRestore) {
-      printError("CHAR_PROVIDER: provided mds are empty and now they should be restored. What now?");
+    if (mds.isEmpty && isRestore) {
+      printError(
+          "CHAR_PROVIDER: provided mds are empty and now they should be restored. What now?");
     }
 
     //FIXME: This part needs to be adjusted - on restore there is no md['characteristics']
     for (String uuid in mds.keys) {
+      Map<String, dynamic> md = mds[uuid]!;
 
-      if ( ! _characteristicsWithMetadata.containsKey(uuid)) {
+      if (!_characteristicsWithMetadata.containsKey(uuid)) {
         // New characteristic discovered, add it
 
         printWarning("CHAR_PROVIDER: Char $uuid is new");
 
-        _synchronizedCharacteristicsWithMetadata[uuid] = mds[uuid]!;
+        _synchronizedCharacteristicsWithMetadata[uuid] = md;
       } else {
         //Characteristic with the same uuid already exists.
         // Where will we put the new characteristic?
-        if (mds[uuid]!['old_value'] == mds[uuid]!['new_value']) {
-          // If the value read is the same as the one we wanted set
+
+        // no editing field is read-only, therefore always synchronized.
+        if (md['metadata']['editing'] == null ||
+            md['old_value'] == md['new_value']) {
+          // In case of editable characteristics, if the value read is the same as the one we wanted set
 
           printWarning("CHAR_PROVIDER: Char $uuid synchronized.");
 
-          _synchronizedCharacteristicsWithMetadata[uuid] = mds[uuid]!;
+          _synchronizedCharacteristicsWithMetadata[uuid] = md;
           if (_unsynchronizedCharacteristicsWithMetadata.containsKey(uuid)) {
             _unsynchronizedCharacteristicsWithMetadata.remove(uuid);
           }
         } else {
-          // If the value read is not the one we want set
+          // Char is editable, and the value read is not the one we want set
 
           printWarning("CHAR_PROVIDER: Char $uuid not synchronized.");
 
@@ -145,18 +217,18 @@ class CharProvider extends ChangeNotifier {
 
       // Only write characteristics if they're getting updated, not if they are restored from the database
       // Which happens at startup
-      if( ! isRestore) {
+      if (!isRestore) {
         databaseManager.updateCharacteristicWithMetadata(uuid, mds[uuid]!);
         printWarning("CHAR_PROVIDER: Sent characteristics to the database.");
       }
-      _characteristicsWithMetadata[uuid] = Map<String, dynamic>.from(mds[uuid]!);
+      _characteristicsWithMetadata[uuid] =
+          Map<String, dynamic>.from(mds[uuid]!);
     }
 
-    if(isRestore) {
+    if (isRestore) {
       isRestore = false;
       printWarning("CHAR_PROVIDER: Set isRestore bit to false.");
     }
-
 
     printError("""
     CHAR_PROVIDER: Executing notifyListeners after assigning characteristics...
@@ -175,10 +247,12 @@ class CharProvider extends ChangeNotifier {
     }
 
     //FIXME: A temporary solution for somewhere else assigning an immutable map to the _characteristicsWithMetadata
-    Map<String, dynamic> tempChar = Map<String, dynamic>.from(_characteristicsWithMetadata[uuid]!);
+    Map<String, dynamic> tempChar =
+        Map<String, dynamic>.from(_characteristicsWithMetadata[uuid]!);
     tempChar['new_value'] = newValue;
     _characteristicsWithMetadata[uuid] = tempChar;
-    databaseManager.updateCharacteristicWithMetadata(uuid, _characteristicsWithMetadata[uuid]!);
+    databaseManager.updateCharacteristicWithMetadata(
+        uuid, _characteristicsWithMetadata[uuid]!);
 
     if (_characteristicsWithMetadata[uuid]!['old_value'] == newValue) {
       _synchronizedCharacteristicsWithMetadata

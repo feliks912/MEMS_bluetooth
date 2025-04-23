@@ -79,3 +79,6 @@ DONE:
 
 TODO:
     add responseTimeout handing
+
+
+TODO: Fix sensor data handling during transfer. Probably easiest is to save it into a separate variable and overwrite it once transfer is done.

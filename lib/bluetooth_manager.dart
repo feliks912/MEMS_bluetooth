@@ -111,8 +111,9 @@ class BluetoothManager {
         //oneByOne: true,
       );
     } else {
+      FlutterBluePlus.startScan(androidScanMode: AndroidScanMode.lowLatency);
       printError(
-          "BLUETOOTH_MANAGER: Device name and Device MAC not provided, what do I scan for?");
+          "BLUETOOTH_MANAGER: Device name and Device MAC not provided, scanning w/o filter.");
     }
   }
 
@@ -174,6 +175,8 @@ class BluetoothManager {
 
   void _handleScanResults(List<ScanResult> results) async {
     printWarning("BLUETOOTH_MANAGER: Scan callback");
+
+    //print(results);
 
     if (results.isEmpty) {
       printWarning("BLUETOOTH_MANAGER: Results are empty.");

@@ -22,7 +22,11 @@ Future<void> main() async {
 
   final charProvider = CharProvider(databaseManager: databaseManager);
 
-  BluetoothManager(deviceMAC, deviceName, charProvider);
+  BluetoothManager(
+      deviceMAC,
+      deviceName,
+      charProvider
+  );
 
   runApp(MultiProvider(providers: [
     Provider(create: (context) => UserData()),

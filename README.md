@@ -30,6 +30,8 @@ Communication app for ultra low power MEMS Bluetooth module.
     * I stored the total length of the data but don't need it for now? Also, if the interruption happens before the peripheral received the request to send new data (eqv to indication ack) then the data isn't deleted and will be re-sent during the next transfer, meaning we must overlap it with existing data or better, discard that data from the list.
       * Pseudo: store each chunk in a global var, if disconnect happens before the ack flag is set, discard that data from the end of the list.
       * Or, append that data to the list only after the ack is [successfully] sent.
+* RTC synchronization
+* Timed scanning
 
 #REDO:
 * We fetch characteristics and read their values. The metadata map holds their old and new values. Old values are current values, and new values are to-be-set, but still unset values. When we read a characteristic, the value of the characteristic must go to the old value. The new value is the one set in the interface unless the characteristic is read for the first time (no such existing char yet). The chars are then ordered by whether the new value == old value or not.

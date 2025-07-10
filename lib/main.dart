@@ -11,7 +11,7 @@ import 'package:provider/provider.dart';
 import 'providers.dart';
 
 Future<void> main() async {
-  const String deviceName = "TinyGo Sensor";
+  const String deviceName = "MEMS_Bluetooth";
   const String deviceMAC = "80:32:53:74:15:A7";
 
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,8 +22,8 @@ Future<void> main() async {
 
   final charProvider = CharProvider(databaseManager: databaseManager);
 
-  BluetoothManager(
-      deviceMAC,
+  final BluetoothManager BLEManager = BluetoothManager(
+      null,//deviceMAC,
       deviceName,
       charProvider
   );
@@ -31,11 +31,13 @@ Future<void> main() async {
   runApp(MultiProvider(providers: [
     Provider(create: (context) => UserData()),
     ChangeNotifierProvider(create: (context) => charProvider)
-  ], child: const MyApp()));
+  ], child: MyApp(BLEManager: BLEManager)));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, required this.BLEManager});
+
+  final BluetoothManager BLEManager;
 
   @override
   Widget build(BuildContext context) {
@@ -46,13 +48,15 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'MEMS Sensor app'),
+      home: MyHomePage(title: 'MEMS Sensor app', BLEManager: BLEManager),
     ));
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+  const MyHomePage({super.key, required this.title, required this.BLEManager});
+
+  final BluetoothManager BLEManager;
 
   final String title;
 
@@ -101,8 +105,8 @@ class _MyHomePageState extends State<MyHomePage> {
                 Tab(icon: Icon(Icons.abc)),
                 Tab(icon: Icon(Icons.directions_transit)),
               ]),
-              body: const TabBarView(children: [
-                TransactionList(),
+              body: TabBarView(children: [
+                TransactionList(BLEManager: widget.BLEManager),
                 // Center(
                 //     child: Column(
                 //         mainAxisAlignment: MainAxisAlignment.center,

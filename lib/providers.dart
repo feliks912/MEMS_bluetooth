@@ -36,6 +36,14 @@ class CharProvider extends ChangeNotifier {
 
   List<int> get partialRawSensorData => _partialRawSensorData;
 
+  void dropDatabase() async {
+    databaseManager.dropDatabase();
+    unsynchronizedCharacteristicsWithMetadata.clear();
+    synchronizedCharacteristicsWithMetadata.clear();
+    printError("Unsynch and synch chars cleared.");
+    notifyListeners();
+  }
+
   void storePartialTransferData(List<int> data, int totalDataLength) {
     _partialRawSensorData = data;
     _partialTransferTotalDataLength = totalDataLength;

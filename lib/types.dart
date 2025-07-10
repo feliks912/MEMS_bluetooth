@@ -1,9 +1,11 @@
+import 'dart:ffi';
+
 import 'package:mems_bluetooth/helpers.dart';
 
 class BluetoothTransaction {
   final Map<String, dynamic> metadata;
   final Map<String, int> characteristicValues;
-  final List<SensorData> sensorData;
+  final List<SensorData>? sensorData;
 
   const BluetoothTransaction(
       {required this.metadata,
@@ -18,7 +20,9 @@ class BluetoothTransaction {
     String characteristicValuesString = characteristicValues.entries
         .map((e) => "${e.key}: ${e.value}")
         .join(", ");
-    String sensorDataString = sensorData.map((e) => e.toString()).join(", ");
+    String sensorDataString = sensorData == null
+        ? "null"
+        : sensorData!.map((e) => e.toString()).join(", ");
 
     return "BluetoothTransaction(metadata: {$metadataString}, characteristicValues: {$characteristicValuesString}, sensorData: {$sensorDataString})";
   }
@@ -27,8 +31,9 @@ class BluetoothTransaction {
     return {
       "metadata": metadata,
       "characteristic_values": characteristicValues,
-      "sensor_data":
-          sensorData.map((element) => element.toSembastMap()).toList(),
+      "sensor_data": sensorData == null
+          ? "null"
+          : sensorData!.map((element) => element.toSembastMap()).toList(),
     };
   }
 
@@ -73,67 +78,93 @@ class BluetoothTransaction {
 }
 
 class SensorData {
-  final int startTime;
-  final int lengthTime;
-  final int ODR;
-  final int lengthData;
+  final int timestamp;
+  final int dataLength;
   final List<int> rawData;
 
   //TODO: Use fixnum to create static unsigned integers. For now signed will do.
   const SensorData(
-      {required this.startTime,
-      required this.lengthTime,
-      required this.ODR,
-      required this.lengthData,
+      {required this.timestamp,
+      required this.dataLength,
       required this.rawData});
 
   @override
   String toString() {
     // TODO: implement toString
-    return "SensorData(startTime: ${startTime.toString()}, lengthTime: ${lengthTime.toString()}, ODR: ${ODR.toString()}, lengthData: ${lengthData.toString()}, rawData: {${rawData.toString()})";
+    return "SensorData(timestamp[ms]: ${timestamp.toString()}, dataLength: ${dataLength.toString()}, rawData: {${rawData.toString()})";
   }
 
   Map<String, dynamic> toSembastMap() {
     return {
-      "start_time": startTime,
-      "length_time": lengthTime,
-      "ODR": ODR,
-      "length_data": lengthData,
+      "timestamp": timestamp,
+      "data_length": dataLength,
       "raw_data": rawData,
     };
   }
 
   static List<SensorData> fromRawSensorDataList(List<int> list) {
     List<SensorData> sensorDataList = [];
-    while (list.length > 16) {
-      SensorData sensorData = SensorData.fromBytesList(list);
+
+    printWarning("Starting data conversion from raw list.");
+
+    if(list.length < 13){
+      printError("TYPES: Raw sensor data list contains less than 13 bytes (unix timestamp and one sensor readout). Aborting conversion.");
+      return [];
+    }
+    int previousTimestamp = bytesToIntLE(list.sublist(0, 8)); // First unix timestamp from BLE synchronization. All subsequent timestamps are a delta of time between them and previous timestamp.
+
+    printWarning("First unix timestamp is $previousTimestamp");
+    printWarning("Initial raw list length is ${list.length}");
+
+    list = list.sublist(8);
+    printWarning("Raw list length with unix timestamp excluded is ${list.length}");
+
+    while (list.length > 5) {
+      int timestamp = bytesToIntLE(list.sublist(0, 4)) + previousTimestamp; // 32-bit unsigned int
+      printWarning("timestamp: $timestamp");
+      int dataLength = bytesToIntLE(list.sublist(4, 5)); // 8-bit unsigned int
+      printWarning("dataLength: $dataLength");
+      List<int> rawData = list.sublist(5, 5 + dataLength); // List of 8-bit unsigned ints
+      printWarning("rawData length: ${rawData.length}");
+
+      SensorData sensorData = SensorData(timestamp: timestamp, dataLength: dataLength, rawData: rawData);
       sensorDataList.add(sensorData);
-      list = list.sublist(sensorData.lengthData * 2 +
-          16); //lengthData is for int, this are raw bytes
+
+      previousTimestamp = timestamp;
+
+      list = list.sublist(5 + dataLength);
+      printWarning("\nNew raw list length: ${list.length}");
+
       if (list.isEmpty) break;
     }
-    printWarning(
-        "Created List<SensorData> from ${sensorDataList.length} sensor events.");
+
+    if (list.isNotEmpty) {
+      printError(
+          "TYPES: Created List<SensorData> from ${sensorDataList.length} sensor events, but ${list.length} elements remain.");
+    } else {
+      printWarning(
+          "TYPES: Created List<SensorData> from ${sensorDataList.length} sensor events.");
+    }
+
     return sensorDataList;
   }
 
-  factory SensorData.fromBytesList(List<int> list) {
-    int lengthData = bytesToIntLE(list.sublist(14, 16)) ~/ 2;
+  factory SensorData.fromBytesList(List<int> list, int previousTimestamp) {
+    int dataLength = bytesToIntLE(list.sublist(4, 6)) ~/ 2;
 
     SensorData data = SensorData(
-        startTime: bytesToIntLE(list.sublist(0, 8)),
-        lengthTime: bytesToIntLE(list.sublist(8, 12)),
-        ODR: bytesToIntLE(list.sublist(12, 14)),
-        lengthData: lengthData,
-        rawData: List.generate(lengthData, (index) {
+        timestamp: bytesToIntLE(list.sublist(0, 4)) + previousTimestamp,
+        dataLength: dataLength,
+        rawData: List.generate(dataLength, (index) {
           int startIndex = index * 2;
           try {
-            if (startIndex + 1 < lengthData * 2) {
+            if (startIndex + 1 < dataLength * 2) {
               int firstByte = list[16 + startIndex];
               int secondByte = list[17 + startIndex];
               return bytesToIntLE([firstByte, secondByte]);
             }
-            printError("TYPES: Error when converting daa from octets: if statement exited, returning '-1'");
+            printError(
+                "TYPES: Error when converting daa from octets: if statement exited, returning '-1'");
             return -1;
           } catch (e) {
             printError(
@@ -147,10 +178,8 @@ class SensorData {
 
   factory SensorData.fromSembastMap(Map<String, Object?> map) {
     return SensorData(
-      startTime: map['start_time'] as int,
-      lengthTime: map['length_time'] as int,
-      ODR: map['ODR'] as int,
-      lengthData: map['length_data'] as int,
+      timestamp: map['timestamp'] as int,
+      dataLength: map['data_length'] as int,
       rawData: (map['raw_data'] as Iterable<Object?>?)
               ?.map((element) => element as int)
               .toList() ??

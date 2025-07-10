@@ -33,6 +33,11 @@ class DatabaseManager {
     return _dbCompleter.future;
   }
 
+  void dropDatabase() async {
+    await _database!.dropAll();
+    printError("Database dropped.");
+  }
+
   void _initDatabase() async {
     final Directory dbPath;
 
@@ -52,10 +57,6 @@ class DatabaseManager {
           await databaseFactoryIo.openDatabase(path, version: databaseVersion);
 
       printWarning("DATABASE: Database opened");
-
-      // await _database!.dropAll();
-      // printError("Database dropped.");
-      // exit(1);
 
       _dbCompleter.complete(_database);
     } catch (e) {

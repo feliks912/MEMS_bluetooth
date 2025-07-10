@@ -1,3 +1,5 @@
+import 'dart:ffi';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -32,7 +34,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
       Map<String, Map<String, dynamic>> charsWithMeta) {
     Map<String, dynamic> charWithMeta = charsWithMeta[uuid]!;
 
-    int previousNewValue = charWithMeta['new_value'];
+    int previousNewValue = charWithMeta['new_value'] ?? 0;
 
     // BluetoothCharacteristic char =
     //     charWithMeta['characteristic'] as BluetoothCharacteristic;
@@ -108,7 +110,7 @@ class _CharacteristicListState extends State<CharacteristicList> {
           return const Text("Range property missing from 'writing' edit.");
         }
 
-        final TextEditingController textController =
+        final TextEditingController _textController =
             TextEditingController(text: previousNewValue.toString());
 
         void handleSubmit(String text) {
@@ -158,17 +160,17 @@ class _CharacteristicListState extends State<CharacteristicList> {
         }
 
         return TextField(
-          controller: textController,
+          controller: _textController,
           inputFormatters: <TextInputFormatter>[
             FilteringTextInputFormatter.digitsOnly
           ],
           textAlign: TextAlign.right,
           onSubmitted: ((text) => handleSubmit),
           onTapOutside: ((event) {
-            handleSubmit(textController.text);
+            handleSubmit(_textController.text);
             FocusScope.of(context).unfocus();
           }),
-          onEditingComplete: (() => handleSubmit(textController.text)),
+          onEditingComplete: (() => handleSubmit(_textController.text)),
         );
 
       default:
@@ -225,13 +227,17 @@ class _CharacteristicListState extends State<CharacteristicList> {
                               child: Padding(
                                   padding:
                                       const EdgeInsets.fromLTRB(0, 5, 10, 5),
-                                  child: Column(
-                                      // Keep the Column
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        characteristicSelection(
-                                            charData, uuid, charsWithMeta)
-                                      ])),
+                                  child: IntrinsicWidth(
+                                    child: Column(
+                                        // Keep the Column
+                                        mainAxisSize: MainAxisSize.min,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
+                                        children: [
+                                          characteristicSelection(
+                                              charData, uuid, charsWithMeta)
+                                        ]),
+                                  )),
                             ),
                           ]));
                 }),
@@ -241,22 +247,36 @@ class _CharacteristicListState extends State<CharacteristicList> {
   @override
   Widget build(BuildContext context) {
     return Consumer<CharProvider>(builder: (context, charData, child) {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          const Text("Unsynchronized:"),
-          Flexible(
-            flex: 1,
-            child: charList(context, charData,
-                charData.unsynchronizedCharacteristicsWithMetadata, Colors.red),
-          ),
-          const Text("Synchronized:"),
-          Flexible(
-            flex: 1,
-            child: charList(context, charData,
-                charData.synchronizedCharacteristicsWithMetadata, Colors.green),
-          )
-        ],
+      return Scaffold(
+        body: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            const Text("Unsynchronized:"),
+            Flexible(
+              flex: 1,
+              child: charList(
+                  context,
+                  charData,
+                  charData.unsynchronizedCharacteristicsWithMetadata,
+                  Colors.red),
+            ),
+            const Text("Synchronized:"),
+            Flexible(
+              flex: 1,
+              child: charList(
+                  context,
+                  charData,
+                  charData.synchronizedCharacteristicsWithMetadata,
+                  Colors.green),
+            )
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: charData.dropDatabase,
+          backgroundColor: Colors.blue,
+          child: const Icon(Icons.delete),
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       );
     });
   }

@@ -50,3 +50,38 @@ List<int> intToBytesLE(int value) {
 
   return bytes;
 }
+
+List<int> intToBytesLEPadded(int value, int paddedSize){
+  if (paddedSize <= 0) {
+    throw ArgumentError('paddedSize must be a positive integer.');
+  }
+
+  List<int> bytes = [];
+
+  for (int i = 0; i < paddedSize; i++) {
+    bytes.add((value >> (i * 8)) & 0xFF);
+  }
+
+  return bytes;
+}
+
+
+String bytesToHexString(List<int> bytes) {
+  if (bytes.isEmpty) {
+    return "";
+  }
+
+  // Use a StringBuffer for efficient string concatenation
+  final buffer = StringBuffer();
+  for (int i = 0; i < bytes.length; i++) {
+    // Ensure the byte is treated as unsigned and format as two hex digits
+    // padLeft(2, '0') ensures "A" becomes "0A"
+    buffer.write(bytes[i].toRadixString(16).padLeft(2, '0'));
+
+    // Add a space for readability, except after the last byte
+    if (i < bytes.length - 1) {
+      buffer.write(' ');
+    }
+  }
+  return buffer.toString().toLowerCase(); // Convert to uppercase for A-F hex digits
+}

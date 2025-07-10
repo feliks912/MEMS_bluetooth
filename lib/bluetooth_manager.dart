@@ -10,12 +10,16 @@ import 'providers.dart';
 class BluetoothManager {
   //TODO: Handle stream error values and timeouts with grace.
 
-  static String sensorDataLengthUUID = "0badf00d-cafe-4b1b-9b1b-2c931b1b1b1b";
-  static String sensorDataUUID = "c0debabe-face-4f89-b07d-f9d9b20a76c8";
-  static String readConfirmationBitUUID =
-      "aaaaaaaa-face-4f89-b07d-f9d9b20a76c8";
+  static const String sensorDataLengthUUID = "0badf00d-cafe-4b1b-9b1b-2c931b1b1b1b";
+  static const String sensorDataUUID = "c0debabe-face-4f89-b07d-f9d9b20a76c8";
+  static const String flashClearDisconnectBitUUID =
+      "cabba6ee-c0de-4414-a6f6-46a397e18422";
+  static const String unixTimeSynchronizationUUID =
+      "c0dec0fe-cafe-a1ca-992f-1b1b1b1b1b1b";
+  static const String sensorDataReadConfirmUUID = "0badf00d-babe-47f5-b542-bbfd9b436872";
 
-  StreamSubscription? _rawDataNotificationSubscription;
+  static const int BT_LONG_TRANSFER_SIZE_BYTES_MAX = 500;
+
   List<int> longReadPartialRawSensorDataList = [];
   List<int> rawSensorDataList = [];
   int totalSensorDataLength = 0;
@@ -26,9 +30,14 @@ class BluetoothManager {
   late StreamSubscription _BLEStateStream;
   late StreamSubscription _BLEScanStream;
   StreamSubscription? _BLEConnectionState;
+  StreamSubscription? _BLEBondState;
   BluetoothDevice? device;
 
-  int sensorDataMaxChunkSize = 420;
+  static const int sensorDataMaxChunkSize = 420;
+  int sensorDataLength = 0;
+  static const int sensorDataLengthThreshold =
+      0; //TODO: set threshold for initiating connection
+  static const int MANUFACTURER_ID = 0xFFFF;
 
   String? deviceName;
   String? deviceMAC;
@@ -94,6 +103,11 @@ class BluetoothManager {
   // }
 
   void _startScan(String? deviceMAC, String? deviceName) {
+    if (FlutterBluePlus.isScanningNow) {
+      FlutterBluePlus.stopScan();
+      printWarning("BLUETOOTH_MANAGER: Stopped scanning");
+    }
+
     if (deviceMAC != null) {
       FlutterBluePlus.startScan(
         withRemoteIds: [deviceMAC],
@@ -114,6 +128,14 @@ class BluetoothManager {
       FlutterBluePlus.startScan(androidScanMode: AndroidScanMode.lowLatency);
       printError(
           "BLUETOOTH_MANAGER: Device name and Device MAC not provided, scanning w/o filter.");
+    }
+  }
+
+  void manuallyStartScan() {
+    if (FlutterBluePlus.adapterStateNow == BluetoothAdapterState.on &&
+        FlutterBluePlus.connectedDevices.isEmpty &&
+        FlutterBluePlus.isScanningNow == false) {
+      _startScan(deviceMAC, deviceName);
     }
   }
 
@@ -170,7 +192,7 @@ class BluetoothManager {
     //FIXME: Multiple devices with equal names will all have this ran for.
     _BLEScanStream = FlutterBluePlus.onScanResults.listen(_handleScanResults);
 
-    //FlutterBluePlus.cancelWhe nScanComplete(_BLEScanStream);
+    //FlutterBluePlus.cancelWhenScanComplete(_BLEScanStream);
   }
 
   void _handleScanResults(List<ScanResult> results) async {
@@ -200,27 +222,63 @@ class BluetoothManager {
       BLUETOOTH_MANAGER: isNotConnected: $isNotConnected""");
 
       if ((matchesMAC || matchesName) && isNotConnected) {
+        if (FlutterBluePlus.isScanningNow) {
+          FlutterBluePlus.stopScan();
+          printWarning("BLUETOOTH_MANAGER: Stopped scanning");
+        }
+
+        if (result.advertisementData.manufacturerData.isEmpty) {
+          printError(
+              "BLUETOOTH_MANAGER: Device manufacturer data is empty. Aborting and restarting scan.");
+          return;
+        } else if (result.advertisementData.manufacturerData[MANUFACTURER_ID] ==
+            null) {
+          printError(
+              "BLUETOOTH_MANAGER: Device manufacturer data under key $MANUFACTURER_ID doesn't exist. Aborting.");
+        } else {
+          printWarning(
+              "BLUETOOTH_MANAGER: DEVICE MANUFACTURER DATA: ${result.advertisementData.manufacturerData}");
+
+          List<int> manuList =
+              result.advertisementData.manufacturerData[MANUFACTURER_ID]!;
+
+          if (manuList.length != 3) {
+            printError(
+                "BLUETOOTH_MANAGER: Device manufacturer data list length is ${manuList.length} != 3. Aborting.");
+            return;
+          }
+
+          sensorDataLength = bytesToIntLE(manuList.sublist(1, 2));
+          printWarning(
+              "BLUETOOTH_MANAGER: Sensor reports sensor data length of $sensorDataLength in manufacturer data.");
+
+          if (manuList[0] == 1 &&
+              sensorDataLength < sensorDataLengthThreshold) {
+            printError(
+                "BLUETOOTH_MANAGER: Sensor has been initialized but length $sensorDataLength of sensor data is less than threshold $sensorDataLengthThreshold. Aborting.");
+            return;
+          }
+        }
+
         printWarning("BLUETOOTH_MANAGER: Entered if");
         device = result.device;
 
-        // if (FlutterBluePlus.isScanningNow) {
-        //   FlutterBluePlus.stopScan();
-        //   printWarning("Stopped scanning");
-        // }
-
         //FIXME: Race condition - device can be reset to null if
         if (device!.isDisconnected) {
-          if (_BLEConnectionState == null) {
-            _BLEConnectionState = device!.connectionState
-                .listen((BluetoothConnectionState state) {
-              _handleDeviceConnectionStateChange(device!, state);
-            });
-          }
+          _BLEConnectionState ??=
+              device!.connectionState.listen((BluetoothConnectionState state) {
+            _deviceConnectionStateChange(device!, state);
+          });
 
           void connect() async {
             if (!_isConnecting) {
               _isConnecting = true;
               try {
+                _BLEBondState =
+                    device!.bondState.listen((BluetoothBondState state) {
+                  printWarning(
+                      "BLUETOOTH_MANAGER: Bond state changed. New bond state: $state");
+                });
                 await device!.connect(
                   timeout: const Duration(seconds: 5),
                   mtu: 512,
@@ -247,9 +305,8 @@ class BluetoothManager {
             }
           }
 
-          connect();
-
           //Attempt connection
+          connect();
         }
       }
     }
@@ -257,146 +314,107 @@ class BluetoothManager {
     printWarning("BLUETOOTH_MANAGER: Scan callback out");
   }
 
-  void _handleDeviceConnectionStateChange(
+  void _deviceConnectionStateChange(
       BluetoothDevice device, BluetoothConnectionState state) async {
-    //We must re-discover all services on each re-connect
     if (state == BluetoothConnectionState.connected) {
       _isConnecting = false;
+      printWarning("BLUETOOTH_MANAGER: Device is connected.");
 
-      printWarning("BLUETOOTH_MANAGER: Device is connected yayyyy");
-
-      //If freshly connected, discover services right away
+      //We must re-discover all services on each re-connect
       List<BluetoothService> services = await device.discoverServices();
+      List<BluetoothCharacteristic> discoveredCharacteristics = [];
 
       if (services.isEmpty) {
-        //TODO: Handle empty services
         printError(
             "BLUETOOTH_MANAGER: No services discovered on connected device. Attempting reconnect.");
         await device.disconnect();
-        await device.connect();
         return;
       }
 
-      List<BluetoothCharacteristic> discoveredCharacteristics = [];
-
       for (BluetoothService service in services) {
+        if (service.uuid.toString() == "1801" ||
+            service.uuid.toString() == "1800") {
+          printError(
+              "BLUETOOTH_MANAGER: Skipping generic service ${service.uuid}.");
+          continue;
+        }
+
         if (service.characteristics.isEmpty) {
           printError(
               "BLUETOOTH_MANAGER: Service ${service.uuid} doesn't contain any characteristics.");
           continue;
         }
 
-        for (BluetoothCharacteristic char in service.characteristics) {
-          discoveredCharacteristics.add(char);
+        discoveredCharacteristics.addAll(service.characteristics);
+      }
+
+      BluetoothCharacteristic? sensorDataLengthChar;
+      BluetoothCharacteristic? sensorDataChar;
+      BluetoothCharacteristic? sensorDataReadConfirmChar;
+      BluetoothCharacteristic? flashClearDisconnectChar;
+      BluetoothCharacteristic? unixTimeSynchronizationChar;
+
+      for (final char in discoveredCharacteristics) {
+        if (char.uuid.toString() == sensorDataLengthUUID) {
+          sensorDataLengthChar = char;
+        } else if (char.uuid.toString() == sensorDataUUID) {
+          sensorDataChar = char;
+        } else if (char.uuid.toString() == flashClearDisconnectBitUUID) {
+          flashClearDisconnectChar = char;
+        } else if (char.uuid.toString() == unixTimeSynchronizationUUID) {
+          unixTimeSynchronizationChar = char;
+        } else if (char.uuid.toString() == sensorDataReadConfirmUUID) {
+          sensorDataReadConfirmChar = char;
+        }
+
+        if (sensorDataLengthChar != null &&
+            sensorDataChar != null &&
+            flashClearDisconnectChar != null &&
+            unixTimeSynchronizationChar != null &&
+            sensorDataReadConfirmChar != null) {
+          break;
         }
       }
 
-      //FIXME: Add missing character by uuid handling, right now it's empty and we're not even using ornull
-      // --- READ SENSOR DATA LENGTH AND SENSOR DATA
-
-      BluetoothCharacteristic? readConfirmationCharacteristic =
-          discoveredCharacteristics.firstWhereOrNull(
-              (char) => char.uuid.toString() == readConfirmationBitUUID);
-
-      BluetoothCharacteristic? sensorDataLengthChar =
-          discoveredCharacteristics.firstWhereOrNull(
-              (char) => char.uuid.toString() == sensorDataLengthUUID);
-
-      rawSensorDataChar = discoveredCharacteristics
-          .firstWhereOrNull((char) => char.uuid.toString() == sensorDataUUID);
-
-      if (readConfirmationCharacteristic == null) {
-        printError(
-            "BLUETOOTH_MANAGER: readConfirmationCharacteristic is null!");
+      if (sensorDataLengthChar != null) {
+        discoveredCharacteristics.remove(sensorDataLengthChar);
+      } else {
+        printError("BLUETOOTH_MANAGER: sensorDataLengthChar is null");
+        await device.disconnect();
         return;
       }
 
-      discoveredCharacteristics.remove(readConfirmationCharacteristic);
-      discoveredCharacteristics.remove(rawSensorDataChar);
-
-      void readRawSensorData() async {
-
-        if (sensorDataLengthChar == null) {
-          printError("BLUETOOTH_MANAGER: sensorDataLengthChar is null.");
-          return;
-        }
-        if (rawSensorDataChar == null) {
-          printError("BLUETOOTH_MANAGER: rawSensorDataChar is null.");
-          return;
-        }
-
-        try {
-          rawSensorDataList.addAll(charProvider.partialRawSensorData); //Load remaining data from previous transaction.
-        } catch(e) {
-          printError("BLUETOOTH_MANAGER: Can't restore partialRawSensorData from db.");
-        }
-
-        int sensorDataLength = bytesToIntLE(await sensorDataLengthChar.read());
-        longReadPartialRawSensorDataList.clear();
-
-        if (sensorDataLength >= sensorDataMaxChunkSize) {
-
-          void handleNewRawSensorData(List<int> sensorData) {
-            printWarning(
-                "BLUETOOTH_MANAGER: Next chunk of raw sensor data received.");
-
-            longReadPartialRawSensorDataList.addAll(sensorData);
-
-            totalSensorDataLength = sensorData.length;
-
-            if (totalSensorDataLength < sensorDataMaxChunkSize) {
-              _rawDataNotificationSubscription!.cancel();
-
-              _rawDataTransferComplete.complete(true);
-
-              return;
-            }
-
-            try {
-              readConfirmationCharacteristic.write([0]);
-              //Append partial data to the rawSensorDataList.
-              rawSensorDataList.addAll(longReadPartialRawSensorDataList);
-              longReadPartialRawSensorDataList.clear();
-            } catch(e) {
-              printError("BLUETOOTH_MANAGER: Failed to write 0 to readConfirmationCharacteristic. Ack is not sent, not appending data.");
-            }
-          }
-
-          _rawDataNotificationSubscription = await subscribeToCharacteristic(
-              rawSensorDataChar!, handleNewRawSensorData);
-
-          if (_rawDataNotificationSubscription != null) {
-            device.cancelWhenDisconnected(_rawDataNotificationSubscription!);
-          }
-
-          longDataTransferInProgress = true;
-
-          try {
-            await rawSensorDataChar!.read(); // Trigger the first callback.
-          } catch (e) {
-            printError(
-                "BLUETOOTH_MANAGER: Can't read first batch of raw sensor data.");
-          }
-
-          return;
-
-        } else {
-
-          try {
-            rawSensorDataList.addAll(await rawSensorDataChar!.read());
-            _rawDataTransferComplete.complete(true);
-          } catch (e) {
-            printError(
-                "BLUETOOTH_MANAGER: Can't read raw sensor data with length <= sensorDataMaxChunkSize ($sensorDataMaxChunkSize).");
-          }
-        }
+      if(sensorDataReadConfirmChar != null) {
+        discoveredCharacteristics.remove(sensorDataReadConfirmChar);
+      } else {
+        printError("BLUETOOTH_MANAGER: sensorDataReadConfirmChar is null");
+        await device.disconnect();
+        return;
       }
 
-      readRawSensorData();
+      if (sensorDataChar != null) {
+        discoveredCharacteristics.remove(sensorDataChar);
+      } else {
+        printError("BLUETOOTH_MANAGER: sensorDataChar is null");
+        await device.disconnect();
+        return;
+      }
 
-      printWarning("BLUETOOTH_MANAGER: Waiting for raw data to be read...");
-      await _rawDataTransferComplete.future;
-      printWarning("BLUETOOTH_MANAGER: All raw data read... Continuing.");
+      if (flashClearDisconnectChar != null) {
+        discoveredCharacteristics.remove(flashClearDisconnectChar);
+      } else {
+        printError("BLUETOOTH_MANAGER: flashClearDisconnectChar is null");
+        await device.disconnect();
+        return;
+      }
+
+      if (unixTimeSynchronizationChar != null) {
+        discoveredCharacteristics.remove(unixTimeSynchronizationChar);
+      } else {
+        printError("BLUETOOTH_MANAGER: unixTimeSynchronizationChar is null.");
+        await device.disconnect();
+        return;
+      }
 
       Map<String, Map<String, dynamic>> tempUnsynchronizedCharacteristics =
           Map<String, Map<String, dynamic>>.of(
@@ -419,16 +437,17 @@ class BluetoothManager {
                     'new_value'] as int;
 
             printWarning(
-                "BLUETOOTH_MANAGER: Writing $newValue to char $uuid, equal to ${intToBytesLE(newValue)} in hex");
+                "BLUETOOTH_MANAGER: Writing new value $newValue to char $uuid, equal to ${intToBytesLE(newValue)} in hex");
 
+            //FIXME: Int to bytes truncates the int, so value determines the file list which must be constant and is checked on the SoC.
             try {
               await char.write(intToBytesLE(newValue));
               writtenUUIDs.add(char.uuid.toString());
-
-              //TODO: Write is successful so we know what the value is, don't read it.
             } catch (e) {
               printError(
                   "BLUETOOTH_MANAGER: Can't write to characteristic $uuid, reason: $e");
+              await device.disconnect();
+              return;
             }
 
             printWarning("BLUETOOTH_MANAGER: Write to $uuid success.");
@@ -436,33 +455,85 @@ class BluetoothManager {
         }
       }
 
-      //TODO: Exempt those written to from being read.
+      // TODO: configuration characteristics s
+      // Read unwritten characteristics (might have changed)
+      for (BluetoothCharacteristic char in discoveredCharacteristics) {
+        await char.read();
+        printWarning(
+            "BLUETOOTH_MANAGER: Characteristic ${char.uuid.toString()} read. Value is ${bytesToIntLE(char.lastValue)}");
+      }
+
+      int sensorDataLength = bytesToIntLE(await sensorDataLengthChar.read());
+
+      List<SensorData> sensorDataList = [];
+      List<int> sensorDataRawList = [];
+
+      if (bytesToIntLE(sensorDataLengthChar.lastValue) >=
+          sensorDataLengthThreshold) {
+        try {
+          await sensorDataChar.read();
+
+          int dataReadLength = sensorDataChar.lastValue.length;
+          printWarning("BLUETOOTH_MANAGER: First sensor data raw length is $dataReadLength.");
+
+          sensorDataRawList.addAll(sensorDataChar.lastValue);
+          printError(bytesToHexString(sensorDataChar.lastValue));
+
+          while(dataReadLength >= BT_LONG_TRANSFER_SIZE_BYTES_MAX) {
+            await sensorDataReadConfirmChar.write(intToBytesLEPadded(dataReadLength, 2));
+
+            await sensorDataChar.read();
+
+            sensorDataRawList.addAll(sensorDataChar.lastValue);
+            printError(bytesToHexString(sensorDataChar.lastValue));
+
+            dataReadLength = sensorDataChar.lastValue.length;
+
+            printWarning("BLUETOOTH_MANAGER: Consequent sensor data raw length is $dataReadLength.");
+          }
+
+        } catch (e) {
+          printError("BLUETOOTH_MANAGER: sensor data read exception: $e");
+        }
+      }
+
+      printWarning("BLUETOOTH_MANAGER: Total sensor data raw length is ${sensorDataRawList.length}");
+
+      int unixTime = DateTime.timestamp().millisecondsSinceEpoch;
+      printWarning(
+          "Sending unix miliseconds $unixTime to peripheral. Looking like ${intToBytesLEPadded(unixTime, 8)}");
+      await unixTimeSynchronizationChar.write(intToBytesLEPadded(unixTime, 8));
+
+      //FIXME: First get the sensor data, then report back the size.
+      try{
+        await flashClearDisconnectChar.write(
+            intToBytesLEPadded(sensorDataList!.length, 2));
+      } catch(e) {
+        printWarning("Device terminated connection before flashClearDisconnectChar write confirmation has been received. Exception $e");
+      }
+
+
+      if (sensorDataChar.lastValue.isEmpty) {
+        printError("BLUETOOTH_MANAGER: Sensor data characteristic is empty.");
+      } else {
+        sensorDataList =
+            SensorData.fromRawSensorDataList(sensorDataRawList);
+
+        if (sensorDataList.length != sensorDataLength) {
+          printError(
+              "BLUETOOTH_MANAGER: Sensor data list's length doesn't match its reported length. Extracted ${sensorDataList.length} elements, but $sensorDataLength are reported from the sensor.");
+        }
+      }
+
+      sleep(const Duration(milliseconds: 500));
+
+      if (device.isConnected) {
+        printError("BLUETOOTH_MANAGER: Disconnecting device...");
+        device.disconnect();
+      }
 
       if (discoveredCharacteristics.isNotEmpty) {
-        await _matchCharsWithMetadata(discoveredCharacteristics,
-            writtenUUIDs); //FIXME: Why send tempUnsynchronizedCharacteristics?
-      }
-
-      //Write read confirmation characteristic bit
-      try {
-        await readConfirmationCharacteristic
-            .write([1]); // x01 signifies disconnect.
-
-        rawSensorDataList.addAll(longReadPartialRawSensorDataList);
-        longReadPartialRawSensorDataList.clear();
-
-        longDataTransferInProgress = false;
-        charProvider.setPartialRawSensorData = [];
-        printWarning("CHAR_PROVIDER: Data transfer is done and partialRawSensorData has been reset.");
-
-      } catch (e) {
-        printError(
-            "BLUETOOTH_MANAGER: Can't write to read confirmation characteristic: $e");
-      }
-
-      // Complete if
-      if (!_servicesCompleter.isCompleted) {
-        _servicesCompleter.complete(services);
+        await _matchCharsWithMetadata(discoveredCharacteristics, writtenUUIDs);
       }
 
       BluetoothTransaction newTransaction = BluetoothTransaction(
@@ -470,50 +541,22 @@ class BluetoothManager {
           "timestamp": DateTime.now().millisecondsSinceEpoch,
           "updated_characteristics": tempUnsynchronizedCharacteristics
         },
-        characteristicValues: charProvider.characteristicsWithMetadata
-            .map((key, value) => MapEntry(key, value['new_value'])),
-        sensorData: SensorData.fromRawSensorDataList(rawSensorDataList),
+        characteristicValues:
+            charProvider.characteristicsWithMetadata.map((key, value) {
+          printWarning("BLUETOOTH_MANAGER: processing uuid ${key.toString()}");
+          return MapEntry(key, value['new_value']);
+        }),
+        sensorData:
+            sensorDataList, //FIXME: Replace this? Data is in the characteristic.
       );
 
       charProvider.addTransactionToDatabase(newTransaction);
-
-      //FIXME: Disconnect should be done from the embedded device to lower overhead etc upon receiving the readConfirmation
-      // The only reason that doesn't happen here is Go's library lacks support for connection detection and therefore getting the connected device
-      try {
-        printWarning("BLUETOOTH_MANAGER: Disconnecting device...");
-
-        await device.disconnect();
-
-        _servicesCompleter = Completer<List<BluetoothService>>();
-        _rawDataTransferComplete = Completer<bool>();
-
-        printWarning(
-            "BLUETOOTH_MANAGER: Connected devices at disconnect: ${FlutterBluePlus.connectedDevices}");
-
-        printWarning("BLUETOOTH_MANAGER: Device disconnected.");
-
-        //TODO: Implement rescan logic
-        _startScan(deviceMAC, deviceName);
-      } catch (e) {
-        printError(
-            "BLUETOOTH_MANAGER: Can't disconnect from device / scan restart error: $e");
-      }
     }
 
     if (state == BluetoothConnectionState.disconnected) {
-      printError("BLUETOOTH_MANAGER: DISCONNECTED");
-
-      //TODO: Store remaining data.
-      if(longDataTransferInProgress && rawSensorDataList.isNotEmpty) {
-
-        charProvider.storePartialTransferData(rawSensorDataList, totalSensorDataLength);
-
-        printWarning("BLUETOOTH_MANAGER: Stored rawSensorDataList into DataProvider.");
-      }
-
-      printWarning(
-          "BLUETOOTH_MANAGER: Clearing rawSensorDataList due to disconnect.");
-      rawSensorDataList.clear();
+      printError(
+          "BLUETOOTH_MANAGER: state changed to DISCONNECTED. Starting scan.");
+      //_startScan(deviceMAC, deviceName);
     }
   }
 
@@ -535,13 +578,14 @@ class BluetoothManager {
 
     Map<String, Map<String, dynamic>> tempMap = {};
 
-    characteristicMetadata.forEach((key, value) => printWarning(
-        "BLUETOOTH_MANAGER: _matchCharsWithMetadata is processing $key from ble_characteristics.json"));
-
     for (BluetoothCharacteristic char in discoveredCharacteristics) {
       String uuid = char.uuid.toString();
 
+      printWarning(
+          "BLUETOOTH_MANAGER: _matchCharsWithMetadata is processing $uuid from ble_characteristics.json");
+
       if (!characteristicMetadata.containsKey(uuid) || !char.properties.read) {
+        printError("Skipping characteristic $uuid in matchCharsWithMetadata.");
         continue;
       }
 
@@ -549,14 +593,13 @@ class BluetoothManager {
       int? newCharValue;
 
       try {
-        //DONE TODO: instead of reading those which have been written, assign them directly.
-        //FIXME: Handling write errors outside of this function.
-        if (!writtenUUIDs.contains(uuid)) {
-          charValue = bytesToIntLE(await char.read());
-        } else {
+        if (writtenUUIDs.contains(uuid)) {
           charValue =
               charProvider.characteristicsWithMetadata[uuid]!['new_value'];
+        } else {
+          charValue = bytesToIntLE(char.lastValue);
         }
+        printWarning("Char value: $charValue");
       } catch (e) {
         if (e.runtimeType == FlutterBluePlusException) {
           printError(
@@ -576,6 +619,13 @@ class BluetoothManager {
         "old_value": charValue,
         "new_value": newCharValue ?? charValue
       };
+    }
+
+    for (String key in tempMap.keys) {
+      Map<String, dynamic> entry = tempMap[key]!;
+
+      printWarning(
+          "tempMap uuid $key new value is ${entry["new_value"].toString()}");
     }
 
     charProvider.setCharacteristicsWithMetadata = tempMap;

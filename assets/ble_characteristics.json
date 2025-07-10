@@ -29,23 +29,28 @@
             "description": "Device log messages",
             "data_type": "bytes"
         },
+        "beefd1fa-f00d-4d3c-a1ca-ae3e7e098a2b": {
+            "name": "Device Log Length",
+            "description": "Device log messages",
+            "data_type": "uint16"
+        },
         "deadc0de-beef-4b1b-9b1b-1b1b1b1b1b1b": {
             "name": "Memory Allocated Percentage",
             "description": "Percentage of total memory allocated",
             "data_type": "uint8",
             "unit": "%"
         },
+        "c0dec0fe-cafe-a1ca-992f-1b1b1b1b1b1b": {
+            "name": "Unix time synchronization",
+            "description": "Time in unix ms sent to peripheral for time synchronization",
+            "data_type": "uint64",
+            "unit": "ms"
+        },
         "0badf00d-cafe-4b1b-9b1b-2c931b1b1b1b": {
             "name": "Total Sensor Data",
             "description": "Total size of sensor data in memory (bytes)",
             "data_type": "uint32",
             "unit": "bytes"
-        },
-        "fadebabe-0bad-41c7-992f-a5d063dbfeee": {
-            "name": "Auto Disconnect",
-            "description": "Flag indicating whether to auto-disconnect after sending data (0: No, 1: Yes)",
-            "data_type": "bool",
-            "editing": "checkbox"
         },
         "f007face-babe-47f5-b542-bbfd9b436872": {
             "name": "Response Timeout",
@@ -55,32 +60,28 @@
             "editing": "write",
             "range": [0, 1000]
         },
-        "4242c0de-f007-4d3c-a1ca-ae3e7e098a2b": {
-            "name": "Sensor ODR",
-            "description": "Output Data Rate of the sensor in Hz",
-            "data_type": "uint16",
-            "unit": "Hz",
-            "editing": "selection",
-            "selection_options": [100, 200, 500, 1000, 1500, 2500]
-        },
         "c0debabe-face-4f89-b07d-f9d9b20a76c8": {
             "name": "Sensor Data",
             "description": "Raw sensor data",
             "data_type": "bytes"
         },
+        "0badf00d-babe-47f5-b542-bbfd9b436872": {
+            "name": "Sensor Data Read Confirm Bit",
+            "description": "Bit to set when a chunk of sensor data has been received by the central. Write 1 to advance the chunk.",
+            "data_type": "bool"
+        },
         "cabba6ee-c0de-4414-a6f6-46a397e18422": {
-            "name": "Sensor Data Clear Bit",
-            "description": "Bit to clear the sensor data buffer (write 1 to clear)",
-            "data_type": "bool",
-            "editing": "checkbox"
+            "name": "Sensor Data Clear Flash and Disconnect Bit",
+            "description": "Bit to clear the sensor data in flash and disconnect (write 1 to clear)",
+            "data_type": "bool"
         },
         "eeafbeef-cafe-4d3c-a1ca-ae3e7e098a2b": {
             "name": "Advertising Interval (Global)",
-            "description": "Interval between advertising sessions in seconds",
+            "description": "Interval between advertising sessions in milliseconds",
             "data_type": "uint16",
-            "unit": "s",
+            "unit": "ms",
             "editing": "write",
-            "range": [0, 3600]
+            "range": [0, 3600000]
         },
         "babebeef-cafe-4d3c-a1ca-ae3e7e098a2b": {
             "name": "Advertising Duration",

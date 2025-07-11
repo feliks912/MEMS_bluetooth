@@ -10,13 +10,15 @@ import 'providers.dart';
 class BluetoothManager {
   //TODO: Handle stream error values and timeouts with grace.
 
-  static const String sensorDataLengthUUID = "0badf00d-cafe-4b1b-9b1b-2c931b1b1b1b";
+  static const String sensorDataLengthUUID =
+      "0badf00d-cafe-4b1b-9b1b-2c931b1b1b1b";
   static const String sensorDataUUID = "c0debabe-face-4f89-b07d-f9d9b20a76c8";
   static const String flashClearDisconnectBitUUID =
       "cabba6ee-c0de-4414-a6f6-46a397e18422";
   static const String unixTimeSynchronizationUUID =
       "c0dec0fe-cafe-a1ca-992f-1b1b1b1b1b1b";
-  static const String sensorDataReadConfirmUUID = "0badf00d-babe-47f5-b542-bbfd9b436872";
+  static const String sensorDataReadConfirmUUID =
+      "0badf00d-babe-47f5-b542-bbfd9b436872";
 
   static const int BT_LONG_TRANSFER_SIZE_BYTES_MAX = 500;
 
@@ -384,7 +386,7 @@ class BluetoothManager {
         return;
       }
 
-      if(sensorDataReadConfirmChar != null) {
+      if (sensorDataReadConfirmChar != null) {
         discoveredCharacteristics.remove(sensorDataReadConfirmChar);
       } else {
         printError("BLUETOOTH_MANAGER: sensorDataReadConfirmChar is null");
@@ -474,13 +476,15 @@ class BluetoothManager {
           await sensorDataChar.read();
 
           int dataReadLength = sensorDataChar.lastValue.length;
-          printWarning("BLUETOOTH_MANAGER: First sensor data raw length is $dataReadLength.");
+          printWarning(
+              "BLUETOOTH_MANAGER: First sensor data raw length is $dataReadLength.");
 
           sensorDataRawList.addAll(sensorDataChar.lastValue);
           printError(bytesToHexString(sensorDataChar.lastValue));
 
-          while(dataReadLength >= BT_LONG_TRANSFER_SIZE_BYTES_MAX) {
-            await sensorDataReadConfirmChar.write(intToBytesLEPadded(dataReadLength, 2));
+          while (dataReadLength >= BT_LONG_TRANSFER_SIZE_BYTES_MAX) {
+            await sensorDataReadConfirmChar
+                .write(intToBytesLEPadded(dataReadLength, 2));
 
             await sensorDataChar.read();
 
@@ -489,40 +493,36 @@ class BluetoothManager {
 
             dataReadLength = sensorDataChar.lastValue.length;
 
-            printWarning("BLUETOOTH_MANAGER: Consequent sensor data raw length is $dataReadLength.");
+            printWarning(
+                "BLUETOOTH_MANAGER: Consequent sensor data raw length is $dataReadLength.");
           }
-
         } catch (e) {
           printError("BLUETOOTH_MANAGER: sensor data read exception: $e");
         }
       }
 
-      printWarning("BLUETOOTH_MANAGER: Total sensor data raw length is ${sensorDataRawList.length}");
+      printWarning(
+          "BLUETOOTH_MANAGER: Total sensor data raw length is ${sensorDataRawList.length}");
 
       int unixTime = DateTime.timestamp().millisecondsSinceEpoch;
       printWarning(
-          "Sending unix miliseconds $unixTime to peripheral. Looking like ${intToBytesLEPadded(unixTime, 8)}");
+          "Sending unix milliseconds $unixTime to peripheral. Looking like ${intToBytesLEPadded(unixTime, 8)}");
       await unixTimeSynchronizationChar.write(intToBytesLEPadded(unixTime, 8));
 
-      //FIXME: First get the sensor data, then report back the size.
-      try{
-        await flashClearDisconnectChar.write(
-            intToBytesLEPadded(sensorDataList!.length, 2));
-      } catch(e) {
-        printWarning("Device terminated connection before flashClearDisconnectChar write confirmation has been received. Exception $e");
+      sensorDataList = SensorData.fromRawSensorDataList(sensorDataRawList);
+
+      if (sensorDataList.length != sensorDataLength) {
+        printError(
+            "BLUETOOTH_MANAGER: Sensor data list's length doesn't match its reported length. Extracted ${sensorDataList.length} elements, but $sensorDataLength are reported from the sensor.");
       }
 
-
-      if (sensorDataChar.lastValue.isEmpty) {
-        printError("BLUETOOTH_MANAGER: Sensor data characteristic is empty.");
-      } else {
-        sensorDataList =
-            SensorData.fromRawSensorDataList(sensorDataRawList);
-
-        if (sensorDataList.length != sensorDataLength) {
-          printError(
-              "BLUETOOTH_MANAGER: Sensor data list's length doesn't match its reported length. Extracted ${sensorDataList.length} elements, but $sensorDataLength are reported from the sensor.");
-        }
+      //FIXME: First get the sensor data, then report back the size.
+      try {
+        await flashClearDisconnectChar
+            .write(intToBytesLEPadded(sensorDataList.length, 2));
+      } catch (e) {
+        printWarning(
+            "Device terminated connection before flashClearDisconnectChar write confirmation has been received. Exception $e");
       }
 
       sleep(const Duration(milliseconds: 500));

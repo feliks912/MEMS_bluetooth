@@ -1,6 +1,6 @@
 # mems_bluetooth
 
-Communication app for ultra low power MEMS Bluetooth module.
+Android 10 communication app for communicating with a ultra low power MEMS Bluetooth module.
 
 ## General notes
 
